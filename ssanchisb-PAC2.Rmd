@@ -1,0 +1,543 @@
+---
+title: 'Mineria de dades: PEC2 - Mètodes no supervisats'
+author: "Autor: Salvador Sanchis Beneseit"
+date: "Març 2022"
+output:
+  html_document:
+    highlight: default
+    number_sections: yes
+    theme: cosmo
+    toc: yes
+    toc_depth: 3
+    includes:
+      in_header: 05.584-PAC-header.html
+  word_document: default
+  pdf_document:
+    highlight: zenburn
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+------------------------------------------------------------------------
+
+# Exercicis
+
+Els exercicis es realitzaran sobre la base del joc de dades *Hawks* present en el paquet R *Stat2Data*.
+
+Els estudiants i el professorat del Cornell College a Mount Vernon, Iowa, van recollir dades durant molts anys al mirador de falcons de l'estany MacBride, prop d'Iowa City, a l'estat d'Iowa. El joc de dades que analitzem aquí és un subconjunt del conjunt de dades original, utilitzant només aquelles espècies per a les que hi havia més de 10 observacions. Les dades es van recollir en mostres aleatòries de tres espècies diferents de falcons: Cua-roja, Esparver i Falcó de Cooper.
+
+Hem seleccionat aquest joc de dades per la seva semblança amb el joc de dades *penguins* i pel seu potencial alhora d'aplicar-li algoritmes de mineria de dades no supervisats. Les variables numèriques en què us basareu són: *Wing*, *Weight*, *culmen*, *Hallux*
+
+```{r message= FALSE, warning=FALSE}
+if (!require('Stat2Data')) install.packages('Stat2Data'); library('Stat2Data')
+data("Hawks")
+summary(Hawks)
+```
+
+## Exercici 1
+
+Presenta el joc de dades, nom i significat de cada columna, així com les distribucions dels seus valors.
+
+Adicionalment realitza un estudi similar al dels exemples 1.1 i 1.2
+
+### Exploració de les dades
+
+<br>
+
+El joc de dades 'Hawks' conté 908 registres de 19 variables. Les variables corresponen a les següents observacions:
+
+-   Month: mes de l'observació.
+
+-   Day: dia.
+
+-   Year: any.
+
+-   CaptureTime: hora de la captura (HH:MM)
+
+-   ReleaseTime: hora de l'alliberament (HH:MM)
+
+-   BandNumber: codi d'identitat a l'anell identificador.
+
+-   Species: `CH`=Falcó de Cooper, `RT`=Cua-roja, `SS`=Esparver
+
+-   Age: `A`=Adult or `I`=Immadur
+
+-   Sex: `F`=Femella or `M`=Mascle
+
+-   Wing: llargada en mm. de la ploma principal de l'ala, des de la punta fins l'articulació.
+
+-   Weight: pes de l'ocell en gr.
+
+-   Culmen: llargada en mm. de la cresta externa del bec.
+
+-   Hallux: llargada en mm. del dit posterior.
+
+-   Tail: mesurament propi de la llargada de la cua en mm.
+
+-   StandardTail: mesurament estàndard de la llargada de la cua en mm.
+
+-   Tarsus: llargada de l'os principal del peu en mm.
+
+-   WingPitFat: quantitat de greix a l'aixella
+
+-   KeelFat: quantitat de greix al pit
+
+-   Crop: quantitat de material al pap. 1=ple, 0=buit.
+
+<br>
+
+Primer de tot, analitzarem visualment les distribucions de les 4 variables d'interès per detectar la presència de valor aïllats:
+
+```{r}
+boxplot(Hawks$Wing, main = 'Wing')
+boxplot(Hawks$Weight, main = 'Weight')
+boxplot(Hawks$Culmen, main = 'Culmen')
+```
+
+<br>
+
+Veiem que a les variables 'Wing', 'Weight' i 'Culmen' no hi ha valors aïllats. A la variable 'Hallux' però, sí que hi veiem un parell de valors molt allunyats:
+
+```{r}
+boxplot(Hawks$Hallux, main = 'Hallux')
+```
+
+<br>
+
+Examinem aquests dos valors:
+
+```{r}
+na.omit(Hawks[Hawks$Hallux > 300, 10:13])
+
+```
+
+Veiem que en aquests dos casos la resta de variables també presenta valors grans, situats en el quartil superior. Per tant, assumim que els valors no són erronis, i que es tracta simplement d'exemplars d'animals de grans dimensions.
+
+<br>
+
+Seguidament, explorarem la presència de valors nuls:
+
+```{r}
+nrow(Hawks[is.na(Hawks$Weight) | is.na(Hawks$Wing) | is.na(Hawks$Culmen) | is.na(Hawks$Hallux),])
+
+nrow(Hawks[is.na(Hawks$Weight) | is.na(Hawks$Wing) | is.na(Hawks$Culmen) | is.na(Hawks$Hallux),]) / nrow(Hawks)
+```
+
+<br>
+
+Malgrat que la quantitat de files amb valors nuls en les nostres variables d'interès només representen un 1.8% del total de registres, creiem que seria interessant no deixar perdre aquestes registres, i plantegem imputar els valors amb el mètode de veïns més propers:
+
+```{r}
+library(VIM)
+```
+
+<br>
+
+Fem la imputació dels valors, utilitzant les mateixes variables d'interès com a referència:
+
+```{r}
+hawks_knn_imp <- kNN(Hawks, variable = c("Weight", "Wing", "Culmen", "Hallux"), dist_var = c("Weight", "Wing", "Culmen", "Hallux"), imp_var = FALSE)
+```
+
+<br>
+
+Creem una variable amb els registres que contenien valors nuls per a qualsevol de les nostres variables:
+
+```{r}
+hawks_na <- which(is.na(Hawks$Weight) | is.na(Hawks$Wing) | is.na(Hawks$Culmen) | is.na(Hawks$Hallux))
+```
+
+<br>
+
+Mostrem una taula amb els valors abans i després de la imputació:
+
+```{r}
+library(knitr)
+hawks_table_na <- Hawks[hawks_na, c("Weight", "Wing", "Culmen", "Hallux")]
+hawks_table_imp <- hawks_knn_imp[hawks_na, c("Weight", "Wing", "Culmen", "Hallux")]
+colnames(hawks_table_imp)[colnames(hawks_table_imp) %in% c("Weight", "Wing", "Culmen", "Hallux")] <- c("Weight_imp", "Wing_imp", "Culmen_imp", "Hallux_imp")
+hawks_imputed <- cbind(hawks_table_na, hawks_table_imp)
+hawks_imputed <- hawks_imputed[, c("Weight", "Weight_imp", "Wing", "Wing_imp","Culmen", "Culmen_imp", "Hallux", "Hallux_imp")]
+kable(hawks_imputed)
+```
+
+<br>
+
+Finalment, mostrem el sumari del dataset amb el qual treballarem, amb 908 observacions i 4 variables:
+
+```{r}
+hawks4 <- hawks_knn_imp[, 10:13]
+summary(hawks4)
+```
+
+<br>
+
+### Agregació amb k-means
+
+<br>
+
+Instal·lem la llibreria:
+
+```{r}
+if (!require('cluster')) install.packages('cluster')
+library(cluster)
+```
+
+<br>
+
+Comencem a cercar el nombre òptim de clústers. Provem primer amb la funció kmeans, iterant per agrupacions d'entre 2 i 10 clústers:
+
+```{r}
+d <- daisy(hawks4) 
+results <- rep(0, 10)
+for (i in c(2,3,4,5,6,7,8,9,10))
+{
+  fit           <- kmeans(hawks4, i)
+  y_cluster     <- fit$cluster
+  sk            <- silhouette(y_cluster, d)
+  results[i] <- mean(sk[,3])
+}
+```
+
+```{r}
+library(NbClust)
+library(factoextra)
+fviz_nbclust(hawks4, pam, method = "silhouette")+ theme_classic()
+```
+
+En el gràfic podem veure que l'índex de silhouette dóna com a òptima l'agregació de 2 clústers. Mostrem a continuació el detall d'aquests índexs:
+
+<br>
+
+```{r}
+fit2       <- kmeans(hawks4, 2)
+y_cluster2 <- fit2$cluster
+
+fit3       <- kmeans(hawks4, 3)
+y_cluster3 <- fit3$cluster
+
+fit4       <- kmeans(hawks4, 4)
+y_cluster4 <- fit4$cluster
+
+fit5       <- kmeans(hawks4, 5)
+y_cluster5 <- fit5$cluster
+```
+
+```{r}
+sk2 <- silhouette(y_cluster2, d)
+sk3 <- silhouette(y_cluster3, d)
+sk4 <- silhouette(y_cluster4, d)
+sk5 <- silhouette(y_cluster5, d)
+
+mean(sk2[,3])
+mean(sk3[,3])
+mean(sk4[,3])
+mean(sk5[,3])
+```
+
+<br>
+
+Seguidament, com a alternativa, generem un gràfic amb el càlcul de la suma de quadrats de distàncies respecte a centroides, també per a entre 2 i 10 agrupacions:
+
+<br>
+
+```{r}
+results <- rep(0, 10)
+for (i in c(2,3,4,5,6,7,8,9,10))
+{
+  fit           <- kmeans(hawks4, i)
+  results[i] <- fit$tot.withinss
+}
+plot(2:10,results[2:10],type="o",col="magenta",pch=0,xlab="Number of clusters",ylab="tot.tot.withinss")
+```
+
+Aquest gràfic resulta més difícil d'interpretar, ja que no hi trobem un canvi d'inclinació molt pronunciat abans de k=6, i a partir de k=6 hi ha pujades i baixades.
+
+Si seguim explorant alternatives, amb els índexs 'Calinski-Harabasz' ('ch') i silueta mitjana ('asw') obtenim una quantitat de clústers òptima de 10 i 2 clústers respectivament:
+
+<br>
+
+```{r}
+if (!require('fpc')) install.packages('fpc'); library('fpc')
+fit_ch  <- kmeansruns(hawks4, krange = 1:10, criterion = "ch") 
+fit_asw <- kmeansruns(hawks4, krange = 1:10, criterion = "asw") 
+```
+
+```{r}
+fit_ch$bestk
+fit_asw$bestk
+```
+
+<br>
+
+```{r}
+plot(1:10,fit_ch$crit,type="o",col="green",pch=0,xlab="Number of clusters",ylab="Calinski-Harabasz")
+```
+
+<br>
+
+```{r}
+plot(1:10,fit_asw$crit,type="o",col="blue",pch=0,xlab="Number of clusters",ylab="mean silhouette")
+```
+
+<br>
+
+Havent fet totes aquestes simulacions, veiem que l'algoritme no acaba d'identificar com a òptim el nombre de clústers (3) que nosaltres sabem que equivaldria a la divisió en espècies de la mostra. En la majoria dels casos, els índexs mostren com a òptima una agrupació en 2 clústers.
+
+<br>
+
+### Resultats comparats
+
+<br>
+
+Aprofitant doncs que sabem que la mostra es divideix en 3 classes (espècies) diferents, ara visualitzarem la comparativa entre agrupacions fetes amb k-means (k=3) i les dades agrupades segons espècie.
+
+<br>
+
+Primer de tot visualitzem la relació entre les variables 'Wing' i 'Weight':
+
+```{r}
+hawks3clusters <- kmeans(hawks4, 3)
+
+plot(hawks4[c(1,2)], col=hawks3clusters$cluster, main="Classificació k-means")
+```
+
+<br>
+
+```{r}
+hawks5 <- hawks_knn_imp[, c(7,10:13)]
+
+plot(hawks4[c(1,2)], col=as.factor(hawks5$Species), main="Classificació real")
+```
+
+En aquesta comparació veiem l'agrupació que fa l'algoritme no es correspon de forma molt acurada a la divisió per espècies. L'espècie més nombrosa (marcada en vermell al segon gràfic) queda dividida en dos grups per l'algoritme k-means, mentre que les altres dues espècies s'agrupen en un sol clúster.
+
+Farem la mateixa comparació per a diversos parells de variables, i trobarem en tots els casos el mateix tipus de discrepància entre l'algoritme i la classificació real: l'algoritme tendeix a dividir l'espècie 'RT' en dos grups, i ajunta les altres dues espècies en un sol grup.
+
+<br>
+
+```{r}
+plot(hawks4[c(3,4)], col=hawks3clusters$cluster, main="Classificació k-means")
+```
+
+<br>
+
+```{r}
+plot(hawks4[c(3,4)], col=as.factor(hawks5$Species), main="Classificació real")
+```
+
+<br>
+
+```{r}
+plot(hawks4[c(1,3)], col=hawks3clusters$cluster, main="Classificació k-means")
+```
+
+```{r}
+plot(hawks4[c(1,3)], col=as.factor(hawks5$Species), main="Classificació real")
+```
+
+<br>
+
+```{r}
+plot(hawks4[c(1,4)], col=hawks3clusters$cluster, main="Classificació k-means")
+```
+
+```{r}
+plot(hawks4[c(1,4)], col=as.factor(hawks5$Species), main="Classificació real")
+```
+
+<br>
+
+```{r}
+plot(hawks4[c(2,3)], col=hawks3clusters$cluster, main="Classificació k-means")
+```
+
+```{r}
+plot(hawks4[c(2,3)], col=as.factor(hawks5$Species), main="Classificació real")
+```
+
+<br>
+
+```{r}
+plot(hawks4[c(2,4)], col=hawks3clusters$cluster, main="Classificació k-means")
+```
+
+```{r}
+plot(hawks4[c(2,4)], col=as.factor(hawks5$Species), main="Classificació real")
+```
+
+<br>
+
+<br>
+
+<br>
+
+## Exercici 2
+
+<br>
+
+### Generació del model DBSCAN
+
+<br>
+
+Carreguem les llibreries necessàries:
+
+```{r}
+if (!require('dbscan')) install.packages('dbscan'); library('dbscan')
+```
+
+<br>
+
+Per tal d'utilitzar l'algorisme DBSCAN, primer de tot intentarem trobar la mida òptima del radi (valor de eps) per la nostra mostra.
+
+<br>
+
+Primer de tot aplicarem l'algorisme amb un valor arbitrari (5 en aquest cas):
+
+```{r}
+tryeps <- dbscan(hawks4, eps = 5)
+tryeps
+```
+
+Veiem que l'algorisme genera 11 clústers i 663 valors allunyats, i per tant no en resulta una classificació gens idònia.
+
+<br>
+
+Per tal de trobar un valor d'eps que ens doni resultats útils, generarem un gràfic de distància k amb les nostres dades, i identificarem el punt d'inflexió del gràfic per trobar un valor òptim de eps:
+
+```{r}
+kNNdistplot(hawks4, k = 5)
+abline(h=50, col = "red", lty=2)
+
+```
+
+En el gràfic hem superposat una línia vermella en el valor 50, que ens sembla aproximadament el valor on hi ha una inflexió. Utilitzarem doncs el valor eps=50 per implementar l'algorisme. El valor minPts el deixarem en 5 (4 variables + 1):
+
+```{r}
+opt <- dbscan(hawks4, eps = 50, MinPts = 5)
+opt
+```
+
+Veiem com l'algorime identifica 3 grups, i determina que hi ha 28 observacions no classificables (soroll)
+
+<br>
+
+Ara apliquem l'algorisme optics per tal de generar una variable que utilitzarem més avall. Veiem que el resultat d'extreure'n un dbscan és el mateix:
+
+```{r}
+opti <- optics(hawks4)
+dbs <- extractDBSCAN(opti, eps_cl = 50)
+dbs
+```
+
+<br>
+
+Ara visualitzem el resultat. Els tres colors a les valls representen els diferents grups, i els pics de color negre són els valors outliers:
+
+```{r}
+plot(dbs)
+```
+
+<br>
+
+Ara, fem un gràfic que mostra quins són els clústers que proposa l'algorisme dbscan quan visualitzem les observacions per parelles de variables:
+
+```{r}
+pairs(hawks5, col= opt$cluster)
+```
+
+<br>
+
+Per tal de comprovar si aquestes agrupacions s'ajusten a la classificació real, generem el mateix tipus de gràfic utilitzant els colors per indicar les espècies. Comparant els dos gràfics, veiem que les agrupacions són força similars:
+
+```{r}
+pairs(hawks5, col= hawks5$Species)
+```
+
+\
+<br>
+
+Per veure-ho més en detall, mostrem un gràfic amb només dues variables, fent la comparativa entre la classificació DBSCAN i la classificació real:
+
+```{r}
+plot(hawks4[c(1,2)], col=opt$cluster, main="Classificació DBSCAN")
+```
+
+```{r}
+plot(hawks4[c(1,2)], col= as.factor(hawks5$Species), main="Classificació real")
+
+```
+
+<br>
+
+Veiem que, a grans trets, la classificació que fa DBSCAN és molt propera a la classificació real. La diferència més notable en el gràfic és que DBSCAN no inclou els valors considerats com a outliers, que es troben fora del radi definit i que per tant resulten inclassificables (també hi ha alguns valors que queden allunyats del centre del seu grup que es classifiquen erròniament en un grup diferent). Generem un altre gràfic on es mostren aquests valors que queden fora del radi (punts en negre):\
+<br>
+
+```{r}
+hullplot(hawks4[c(1,2)], dbs)
+```
+
+\
+<br>
+
+Presentem una última comparativa entre el model i la classificació real, aquest cop per les variables 'weight' i 'culmen', i amb la llibreria ggplot, on podem veure les etiquetes de cada espècie en el gràfic de la classificació real, i també els punts aïllats (etiqueta '0') al gràfic del model DBSCAN:
+
+```{r}
+library(ggplot2)
+qplot(Weight, Culmen, data = hawks5, colour = Species, main = 'Classificació Real')
+```
+
+<br>
+
+```{r}
+qplot(Weight, Culmen, data = hawks4, colour = as.factor(opt$cluster), main = "Classificació DBSCAN")
+```
+
+<br>
+
+### Avaluació del model
+
+\
+<br>
+
+Finalment, realitzarem una avaluació del model DBSCAN que hem utilitzat. Per fer-ho, utilitzarem l'índex de silhouette aplicat sobre la comparació entre el nostre model i una matriu de distàncies de les dades originals de la qual haurem extret els valors que el model havia identificat com a outliers:\
+
+```{r}
+noise <- opt$cluster==0
+clusters <- opt$cluster[!noise]
+d <- dist(hawks4[!noise, 1:4])
+```
+
+```{r}
+silh <- silhouette(clusters, d)
+plot(silh, border=NA, col=sort(clusters), main="")
+```
+
+<br>\
+Veiem en el resultat que la mitjana de l'índex de silhouette és de 0.74, un índex que denota una bona qualitat d'agrupament (valors de silhouette entre -1.0 i 1.0).
+
+<br>\
+<br>\
+
+## Exercici 3
+
+Realitza una comparativa dels mètodes *k-means* i *DBSCAN*
+
+### Resposta 3
+
+<br>
+
+D'una banda, els resultats de la classificació amb l'algorisme k-means obtenien una avaluació interna òptima quan la mostra es classificava en 2 clústers. Tanmateix, sabem que la mostra es divideix en tres grups (espècies), i per tant hem comprovat que k-means no és el mètode òptim per revelar l'estructura de les nostres dades. Concretament, quan forçàvem l'algorisme k-means a formar 3 clústers, aquest tendia a dividir l'espècie més nombrosa en dos clústers diferents, i agrupava les altres dues espècies en una de sola. K-means és particularment sensible als valors aïllats, i possiblement això creava aquesta distorsió en relació a la classificació real.
+
+Aquesta sensibilitat respecte als valors aïllats s'evita amb l'algorisme DBSCAN, però la contrapartida és que els valors aïllats es classifiquen com a soroll i queden descartats del model. Això és degut al fet que l'algorisme basa la seva classificació en la densitat de les agrupacions, i no pot incorporar de forma eficient els valors que escapen als radis de proximitat que són necessaris per definir els clústers. En el nostre cas hem aconseguit minimitzar el nombre de valors exclosos a 28 valors sobre un total de 908; és una pèrdua petita, però no del tot negligible.
+
+Pel que fa a la comparativa entre els dos mètodes, amb DBSCAN cal fer el treball extra de recercar els valors òptims de radi de veïnatge, mentre que amb k-means cal definir d'entrada el nombre de clústers en el qual volem classificar la mostra. Amb les eines que hem utilitzat per definir aquests factors per ambdós algorismes (diferents mesures d'avaluació interna per a k-means, que donaven com a òptima una divisió en 2 clùsters, i l'anàlisi visual d'un gràfic de distàncies k per a DBSCAN, que ens donava un valor òptim d'eps entorn a 50), i comparant els resultats dels algorismes amb la classificació real, podem afirmar que, almenys en aquest cas, l'algorisme DBSCAN ha estat més efectiu a l'hora d'apropar-se a la classificació real de les dades.
+
+<br>
+
+<br>
+
+<br>
