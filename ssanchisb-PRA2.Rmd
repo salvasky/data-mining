@@ -1,0 +1,1218 @@
+---
+title: 'Mineria de dades: PRA2 - Projecte de mineria de dades'
+author: "Autor: Salvador Sanchis Beneseit"
+date: "Juny 2022"
+output:
+  html_document:
+    highlight: default
+    number_sections: yes
+    theme: cosmo
+    toc: yes
+    toc_depth: 3
+    includes:
+      in_header: 05.584-PEC-header.html
+  word_document: default
+  pdf_document:
+    highlight: zenburn
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+------------------------------------------------------------------------
+
+# Preparació de les dades (PRA1)
+
+<br>
+
+## Presentació de les dades i establiment de l'objectiu analític
+
+<br>
+
+La cardiotocografia és una tècnica utilitzada per fer un monitoratge del ritme cardíac del fetus durant l'embaràs i el part. Es tracta d'una operació de monitoratge que, a part de la pulsació, pren informació de diverses variables per tal de detectar anomalies en el ritme del batec del cor, i determinar l'existència d'anomalies és per tant una tasca complicada de determinar de forma visual en temps real. Un dels aparells més utilitzats per fer aquest monitoratge és l'[Omniview-SisPorto](http://www.omniview.eu/ing/publications), un sistema automatitzat que realitza una anàlisi de la cardiotocografia i activa senyals d'alerta visual i sonora quan la combinació de mesures formen un patró considerat sospitós o patològic.
+
+Malgrat el seu bon funcionament, s'han donat alguns casos en què patrons anòmals del ritme cardíac fetal han passat desapercebuts, i l'empresa Omniview ens ha contactat amb l'encàrrec de millorar els mètodes de classificació que fa el sistema SisPorto. L'objectiu és crear un model de classificació que millori els índexs actuals d'especificitat del sistema, de forma que es minimitzi el nombre de falsos negatius en la detecció d'anomalies del ritme cardíac fetal.
+
+Per començar la nostra tasca, partim del dataset "Fetal cardiotocography data", disponible a <https://www.kaggle.com/datasets/akshat0007/fetalhr>.
+
+Es tracta d'un joc de dades amb 2129 observacions de 40 variables, que inclou dades capturades amb l'aparell SisPorto, però també altres variables recollides de forma manual per l'expert sanitari que realitzà la cardiotocografia en cada observació. Les dades inclouen també un diagnòstic que conclou, per part de l'expert mèdic, si hi ha un patró anòmal o potencialment patològic en cada observació. Aquest diagnòstic es reflecteix en dues de les variables del joc de dades. La primera, anomenada 'Class', és una escala de factors codificats de l'1 al 10, anant de normal a sospitós. La segona variable, també adient per aplicar algorismes de classificació, anomenada 'NSP', classifica les observacions en tres classes: 1=Normal, 2=Sospitós i 3=Patològic.
+
+<br>
+
+Presentem la totalitat de les variables que apareixen al joc de dades. En primer lloc tenim les variables que identifiquen les observacions.
+
+\-**FileName** (string)**:** nom del fitxer de la cardiotocografia
+
+\-**Data** (string)**:** data (mm/dd/aaaa) de l'exploració
+
+\-**SegFile** (string)**:** identificador únic per a cada mesura.
+
+<br>
+
+Seguidament, tenim dues variables que determinen la duració (en segons) del monitoratge:
+
+\-**b** (numèrica)**:** moment d'inici
+
+\-**e** (numèrica)**:** moment de finalització
+
+<br>
+
+Les variables enregistrades pel sistema SisPorto:
+
+\-**LB** (numèrica)**:** nivell (ritme cardíac) de base
+
+\-**AC** (numèrica)**:** acceleracions
+
+\-**FM** (numèrica)**:** moviments fetals
+
+\-**UC** (numèrica)**:** contraccions uterines
+
+\-**ASTV** (numèrica)**:** percentatge de temps amb variabilitat anormal de curta durada
+
+\-**mSTV** (numèrica)**:** valor mitjà de variabilitat de curta durada
+
+\-**ALTV** (numèrica)**:** percentatge de temps amb variabilitat anormal de llarga durada
+
+\-**mLTV** (numèrica)**:** valor mitjà de variabilitat de llarga durada
+
+<br>
+
+Altres variables referents al ritme cardíac:
+
+\-**LB** (numèrica)**:** nivell de base determinat per un expert
+
+\-**DL** (numèrica)**:** desacceleracions lleugeres
+
+\-**DS** (numèrica)**:** desacceleracions severes
+
+\-**DP** (numèrica)**:** desacceleracions perllongades
+
+\-**DR** (numèrica)**:** desacceleracions repetitives
+
+<br>
+
+Més enllà, el registre del ritme cardíac fetal genera un histograma, les dades del qual s'inclouen al dataset en les següents variables:
+
+\-**Width** (numèrica)**:** amplada de l'histograma
+
+\-**Min** (numèrica)**:** mínim de freqüència de l'histograma
+
+\-**Max** (numèrica)**:** màxim de freqüència de l'histograma
+
+\-**Nmax** (numèrica)**:** nombre de pics de l'histograma
+
+\-**Nzeros** (numèrica)**:** nombre de zeros de l'histograma
+
+\-**Mode** (numèrica)**:** mode
+
+\-**Mean** (numèrica)**:** mitjana
+
+\-**Median** (numèrica)**:** mediana
+
+\-**Variance** (numèrica)**:** variància
+
+\-**Tendency** (categòrica)**:** -1=asimètrica a l'esquerra, 0=simètrica, 1=asimètrica a la dreta
+
+<br>
+
+Finalment, hi ha un seguit de variables amb valoracions diagnòstiques de classificació:
+
+\-**A** (binària)**:** son calmat
+
+\-**B** (binària)**:** son REM
+
+\-**C** (binària)**:** vetlla calmada
+
+\-**D** (binària)**:** vetlla activa
+
+\-**AD** (binària)**:** patró d'estrès
+
+\-**DE** (binària)**:** patró de desacceleració
+
+\-**LD** (binària)**:** patró sever de desacceleració
+
+\-**FS** (binària)**:** patró sinusoïdal pla (estat patològic)
+
+\-**SUSP** (binària)**:** patró sospitós
+
+\-**CLASS** (categòrica)**:** codi de 0 a 1 per classes A a SUSP
+
+\-**NSP** (categòrica)**:** 1=Normal, 2=Sospitós, 3=Patològic
+
+<br>
+
+<br>
+
+## Verificació i preparació de les dades
+
+<br>
+
+Carreguem les dades:
+
+```{r}
+CTG <- read.csv("CTG.csv")
+```
+
+<br>
+
+Mostrem les primeres línies del dataset:
+
+```{r}
+as.data.frame(head(CTG))
+```
+
+<br>
+
+Verifiquem les dimensions del dataset:
+
+```{r}
+dim(CTG)
+```
+
+\
+<br>
+
+Mostrem un resum de les variables:
+
+```{r}
+summary(CTG)
+```
+
+\
+<br>
+
+<br>
+
+Si seleccionem les files amb valors NA veiem que es tracta de les últimes tres files del dataset, on la majoria de camps estan buits:
+
+```{r}
+CTG[rowSums(is.na(CTG)) > 0,]
+```
+
+\
+<br>
+
+Així doncs, eliminem aquests darrers tres registres sense perdre informació valuosa:
+
+```{r}
+CTG2 <- na.omit(CTG)
+dim(CTG2)
+```
+
+\
+<br>
+
+Comprovem que amb aquesta operació, el dataset queda net de valors buits:
+
+```{r}
+sum(is.na(CTG2))
+```
+
+<br>
+
+Seguidament, observem que hi ha dos variables que no ens semblen d'especial rellevància de cara a la tasca. Es tracta de les variables 'FileName' i 'Date'. Considerem, d'una banda, que els registres queden correctament identificats si mantenim la variable 'SegFile', i d'altra banda, la data del registre no hauria de tenir cap influència en la classificació (assumint que la precisió de l'instrument de mesura no es veu afectat per la data de la mesura). Així doncs, eliminem aquestes dues variables del dataset:
+
+```{r}
+CTG2 <- subset(CTG2, select = -c(FileName, Date))
+```
+
+<br>
+
+Seguidament, obtenint informació suplementària sobre el joc de dades al repositori de [UCI](https://archive.ics.uci.edu/ml/datasets/cardiotocography), ens adonem que les variables 'AC', 'FM', 'UC', 'DL', 'DS' i 'DP' apareixen al dataset com a nombres absoluts d'ocurrències. Per tal que aquestes variables es puguin comparar entre registres, cal que estiguin expressades en nombre d'ocurrències per segon. Com que cada registre té una durada diferent, cal fer aquesta operació registre a registre. Per fer-ho, utilitzem les variables 'b' i 'e' (moment d'inici i de finalització) per determinar la durada del registre, i creem noves variables que expressen ocurrències per segon:
+
+```{r}
+CTG2$ACps <- round(CTG2$AC / (CTG2$e - CTG2$b), digits = 3)
+CTG2$FMps <- round(CTG2$FM / (CTG2$e - CTG2$b), digits = 3)
+CTG2$UCps <- round(CTG2$UC / (CTG2$e - CTG2$b), digits = 3)
+CTG2$DLps <- round(CTG2$DL / (CTG2$e - CTG2$b), digits = 3)
+CTG2$DSps <- round(CTG2$DS / (CTG2$e - CTG2$b), digits = 3)
+CTG2$DPps <- round(CTG2$DP / (CTG2$e - CTG2$b), digits = 3)
+```
+
+<br>
+
+Mostrem un nou resum per seguir explorant les dades:
+
+```{r}
+str(CTG2)
+```
+
+<br>
+
+Tenim la impressió que pot ser que no hi hagi diferència entre la línia de base mesurada pel sistema SisPorto i la línia de base establerta per l'expert:
+
+```{r}
+all(CTG2$LBE == CTG2$LB)
+```
+
+<br>
+
+Efectivament, les dues variables són idèntiques, i per tant en podem eliminar una de les dues:
+
+```{r}
+CTG2 <- subset(CTG2, select = -LBE)
+```
+
+<br>
+
+Ens adonem també que tots els valors de la variable 'DR' són 0, i per tant també eliminem aquesta variable:
+
+```{r}
+summary(CTG2$DR)
+```
+
+```{r}
+CTG3 <- subset(CTG2, select = -DR)
+```
+
+<br>
+
+### Detecció d'outliers
+
+<br>
+
+Hem analitzat una per una les variables numèriques que considerem interessants de cara a una possible tasca de classificació. A continuació mostrem algunes de les variables on hem detectat valors aïllats:
+
+<br>
+
+La variable 'AC' (acceleracions), mostra un gran nombre de valors aïllats:
+
+```{r}
+boxplot.stats(CTG3$AC)$out
+```
+
+```{r}
+boxplot(CTG3$AC, main = "AC")
+```
+
+<br>
+
+Si mostrem el valor més allunyat, veiem que la resta de variables no mostren valors estranys, i per tant la totalitat del registre sembla tenir coherència. Es podria tractar d'un error només en el valor de la variable 'AC'. Fixant-nos-hi més en detall, veiem que la duració del registre és de més de 3000 segons, una duració molt llarga, que fa que un nombre total gran d'ocurrències de la variable 'AC' no sigui tan estrany:
+
+```{r}
+CTG3[CTG3$AC > 25,]
+```
+
+<br>
+
+Per comparar-ho, fem la mateixa operació de detecció d'outliers, però aquest cop utilitzem la variable 'ACps', que mostra ocurrències per segon en lloc de nombre absolut d'ocurrències:
+
+```{r}
+boxplot.stats(CTG3$ACps)$out
+```
+
+<br>
+
+```{r}
+boxplot(CTG3$ACps, main = "ACps")
+```
+
+Veiem que els valors extrems són menys, i també menys allunyats. Considerem que aquests valors allunyats no són errors de registre, i els mantenim en el dataset sense cap correcció. Realitzem la resta de l'anàlisi de detecció d'outliers utilitzant les variables que registren ocurrències per segon:
+
+<br>
+
+```{r}
+CTG3[CTG3$ACps > 0.016,]
+```
+
+<br>
+
+Analitzem la variable 'FMps' (moviments fetals per segon):
+
+```{r}
+boxplot.stats(CTG3$FMps)$out
+```
+
+<br>
+
+```{r}
+boxplot(CTG3$FMps, main = "FMps")
+```
+
+<br>
+
+```{r}
+hist(CTG3$FMps, breaks = sqrt(nrow(CTG3)))
+```
+
+En el cas de la variable FMps, hi ha en un principi una quantitat extrema d'outliers. L'anàlisi visual mostra que en realitat no es tracta d'outliers, sinó que estem davant d'una variable amb una distribució molt asimètrica. La variable 'FM' mesura 'moviments fetals', i sembla lògic que hi hagi una gran variabilitat, així com una gran quantitat de valors baixos o zero, ja que quan el fetus dorm o està en estat de vetlla calmada, els moviments són pocs. En tot cas, creem una nova variable amb una transformació logarítmica d'aquesta variable, en cas que ens pugui resultar útil en models posteriors:
+
+```{r}
+library(ggplot2)
+CTG3$FMps_log <- log(CTG3$FMps)
+
+ggplot(mapping = aes(CTG3$FMps_log)) + geom_density()
+```
+
+<br>
+
+Analitzem la variable 'UCps'(contraccions uterines per segon):
+
+```{r}
+boxplot.stats(CTG3$UCps)$out
+```
+
+<br>
+
+```{r}
+boxplot(CTG3$UCps, main = "UCps")
+```
+
+<br>
+
+Detectem un únic valor allunyat, però no tenim evidència per considerar-lo com a erroni, i per tant el mantenim en el dataset:
+
+```{r}
+CTG3[CTG3$UCps > 0.014,]
+```
+
+\
+<br>
+
+Analitzem la variable 'ASTV' (percentatge de temps amb variabilitat anormal de curta durada), i no hi trobem outliers:
+
+```{r}
+boxplot.stats(CTG3$ASTV)$out
+```
+
+\
+<br>
+
+Analitzem la variable 'ALTV' (percentatge de temps amb variabilitat anormal de llarga durada), i ens trobem amb la mateixa situació que amb la variable 'FM', una distribució molt asimètrica, amb molts valors allunyats, però que no es poden considerar com a registres erronis. No hi fem cap modificació:
+
+```{r}
+boxplot.stats(CTG3$ALTV)$out
+```
+
+```{r}
+boxplot(CTG3$ALTV, main = "ALTV")
+```
+
+\
+<br>
+
+Pel que fa a la variable 'DS', ens trobem amb una situació diferent. Els possibles valors són 0 i 1, i dels 2126 casos, només 7 es classifiquen com a '1'. La variable mesura 'desacceleracions severes', i és per tant normal que només una petita minoria dels casos presentin aquest patró:
+
+```{r}
+CTG3[CTG3$DS != 0,]
+```
+
+<br>
+
+### Discretització
+
+<br>
+
+Procedim a discretitzar diverses de les variables. En primer lloc, afegirem etiquetes a la variable 'DS' que acabem d'analitzar, creant una nova variable amb els codis 'absent' i 'present':
+
+```{r}
+library(arules)
+CTG3$DS_d <- discretize(CTG3$DS, method = "fixed", breaks = c(-Inf, 1, Inf),labels = c("absent", "present"))
+table(CTG3$DS_d)
+```
+
+<br>
+
+Seguidament discretitzarem totes les variables que mesuren ocurrències per segon, creant en cada cas tres nivells: 'baix', 'mitjà' i 'alt'. Farem la discretització utilitzant el mètode k-means:
+
+```{r}
+CTG3$AC_d <- discretize(CTG3$ACps, method = "cluster", labels = c("low", "medium", "high"))
+CTG3$FM_d <- discretize(CTG3$FMps, method = "cluster", labels = c("low", "medium", "high"))
+CTG3$UC_d <- discretize(CTG3$UCps, method = "cluster", labels = c("low", "medium", "high"))
+CTG3$DL_d <- discretize(CTG3$DLps, method = "cluster", labels = c("low", "medium", "high"))
+CTG3$DP_d <- discretize(CTG3$DPps, method = "cluster", labels = c("low", "medium", "high"))
+summary(CTG3$AC_d)
+summary(CTG3$FM_d)
+summary(CTG3$UC_d)
+summary(CTG3$DL_d)
+summary(CTG3$DP_d)
+```
+
+\
+<br>
+
+També crearem una nova variable 'NSP2' a partir de la variable 'NSP', on ajuntarem les categories 'sospitós' i 'patològic'. Amb això obtenim una variable target classificatòria binària, i podem més endavant triar si els nostres models de classificació tenen 2 o 3 classes a identificar:
+
+```{r}
+summary(as.factor(CTG3$NSP))
+```
+
+```{r}
+CTG3$NSP2 <- as.factor(CTG3$NSP)
+levels(CTG3$NSP2) <- c('Normal', 'Suspect', 'Pathologic')
+levels(CTG3$NSP2)[levels(CTG3$NSP2)=="Pathologic"] <-"Suspect"
+summary(CTG3$NSP2)
+```
+
+<br>
+
+Finalment, i abans de donar per acabat el treball de neteja de les dades, ens assegurem que totes les variables categòriques o binàries estiguin factoritzades:
+
+```{r}
+factcols <- c('A', 'B', 'C', 'D', 'AD', 'DE', 'LD', 'FS', 'SUSP', 'CLASS', 'NSP')
+CTG3[factcols] <- lapply(CTG3[factcols], factor)
+sapply(CTG3, class)
+```
+
+<br>
+
+Creem un nou dataframe amb totes les transformacions realitzades:
+
+```{r}
+ctg1 <- CTG3
+```
+
+\
+<br>\
+
+```{r}
+write.csv(ctg1, "ctg1.csv", row.names = FALSE)
+```
+
+<br>
+
+```{r}
+ctgp2 <- read.csv("ctg1.csv")
+```
+
+<br>
+
+<br>
+
+# Respostes PRA 2
+
+<br>
+
+## Exercici 1
+
+<br>
+
+Com vam comentar a la pràctica anterior, l'objectiu del nostre estudi és millorar la capacitat de classificació de models construïts amb les dades proporcionades per sistema SisPorto. El nostre joc de dades conté una gran quantitat de dades, tant numèriques com categòriques, però seguint el nostre objectiu, seleccionem les variables numèriques que genera els sistema SisPorto per aplicar-hi un model no supervisat. Prescindim de DSps (desacceleracions severes), ja que entenem que quan es detecta una desacceleració severa, això per si sol ja indica un cas patològic. Ens interessa en canvi veure com les altres variables, que capturen anomalies més lleus o subtils, es combinen dintre de cada grup diagnòstic.
+
+```{r}
+
+num_df <- ctgp2[c('ACps', 'FMps', 'UCps', 'DLps', 'DPps', 'ASTV', 'ALTV')]
+```
+
+<br>
+
+Normalitzem les dades:
+
+```{r}
+#definim la funció de normalització
+mm_norm <- function(x) {
+    (x - min(x)) / (max(x) - min(x))
+}
+
+num_norm <- as.data.frame(lapply(num_df, mm_norm))
+```
+
+\
+<br>
+
+```{r}
+if (!require('cluster')) install.packages('cluster')
+library(cluster)
+```
+
+Per tal de començar a trobar el nombre ideal de clústers en un model no supervisat, iterem la funció kmeans per agrupacions d'entre 2 i 10 clústers:
+
+```{r}
+d <- daisy(num_norm) 
+results <- rep(0, 10)
+for (i in c(2,3,4,5,6,7,8,9,10))
+{
+  fit           <- kmeans(num_norm, i)
+  y_cluster     <- fit$cluster
+  sk            <- silhouette(y_cluster, d)
+  results[i] <- mean(sk[,3])
+}
+```
+
+\
+<br>
+
+Prenent com a mesura l'índex de silhouette, el nombre òptim de clústers seria 3, que precisament coincideix amb els tres grups que tenim definits segons la variable NSP ('normal', 'sospitós' i 'patològic'):
+
+```{r}
+plot(2:10,results[2:10],type="o",col="blue",pch=0,xlab="Number of clusters",ylab="Silhouette")
+```
+
+\
+<br>
+
+\
+Si, com a alternativa, fem el càlcul de la suma de quadrats de distàncies respecte a centroides, també per a entre 2 i 10 agrupacions, el gràfic resultant és més difícil d'interpretar que l'anterior, però sembla que hi pugui haver un 'colze' també a l'alçada de 3 clústers:
+
+```{r}
+results <- rep(0, 10)
+for (i in c(2,3,4,5,6,7,8,9,10))
+{
+  fit           <- kmeans(num_norm, i)
+  results[i] <- fit$tot.withinss
+}
+plot(2:10,results[2:10],type="o",col="blue",pch=0,xlab="Nombre de clústers",ylab="tot.tot.withinss")
+```
+
+<br>
+
+Pel que fa als índexs 'Calinski-Harabasz' ('ch') i silueta mitjana ('asw'), aquests ens dónen respectivament un nombre òptim de clústers de 2 i 3:
+
+```{r}
+if (!require('fpc')) install.packages('fpc'); library('fpc')
+fit_ch  <- kmeansruns(num_norm, krange = 1:10, criterion = "ch") 
+fit_asw <- kmeansruns(num_norm, krange = 1:10, criterion = "asw") 
+fit_ch$bestk
+fit_asw$bestk
+```
+
+<br>
+
+A partir d'aquest moment, per avaluar l'algorisme de classificació, tenim dues opcions. Podem comparar la classificació amb 3 clústers comparant-la amb la variable NSP, que determina 3 nivells, o també podem crear un model amb 2 clústers, i comparar-lo amb la variable NSP2 que havíem creat anteriorment, i que ajuntava els nivells 'sospitós' i 'patològic' en un de sol.
+
+Veiem una primera comparació entre les variables ALTV i ASTV amb 3 clústers:
+
+```{r}
+ctg3clusters <- kmeans(num_norm, 3)
+
+plot(num_norm[c(6,7)], col=ctg3clusters$cluster, main="Classificació k-means")
+```
+
+Com podem veure, si comparem aquest gràfic amb la classificació real, els tres clústers creats per l'algorisme no corresponen de forma gaire fidel als 3 grups diagnòstics. Hi ha una mena d'inversió dels grups. El grup definit pels nivells baixos d'ambdues variables en la classificació real (en negre al gràfic de sota) es veu dividit en 2 subgrups en la classificació amb k-means, i els dos altres grups reals, en la zona de valors progressivament més alts, es veuen compactats en un sol grup.\
+<br>
+
+```{r}
+plot(num_norm[c(6,7)], col=as.factor(ctgp2$NSP), main="Classificació real")
+```
+
+\
+<br>
+
+Provem ara de comparar la classificació de k-means de 2 clústers amb la variable NSP2, que utilitza només 2 etiquetes diagnòstiques.
+
+```{r}
+ctg2clusters <- kmeans(num_norm, 2)
+
+plot(num_norm[c(6,7)], col=ctg2clusters$cluster, main="Classificació k-means")
+plot(num_norm[c(6,7)], col=as.factor(ctgp2$NSP2), main="Classificació real")
+```
+
+A la comparació dels gràfics veiem que, a grans trets, la classificació sembla coincidir, si més no pels valors extrems de les dues variables ALTV i ASTV. Però si ens hi fixem, en la zona intermèdia, la pertinença a un grup o l'altre difereix notablement entre les dues gràfiques. Mentre que a la classificació real l'encavalcament és més gradual, i fins i tot hi ha casos pertanyents al primer grup que s'enfilen fins els valors més alts de les dues variables, a la classificació amb k-means els dos grups es veuen dividits sense pràcticament cap encavalcament.\
+<br>
+
+Realitzem el mateix tipus de comparació per les variables FMps i ACps:
+
+```{r}
+plot(num_norm[c(1,2)], col=ctg3clusters$cluster, main="Classificació k-means")
+plot(num_norm[c(1,2)], col=as.factor(ctgp2$NSP), main="Classificació real")
+legend("topright",                   
+       legend = c("normal", "sospitós", "patològic"),
+       col = 1:3, pch = 1)
+```
+
+\
+<br>
+
+```{r}
+plot(num_norm[c(1,2)], col=ctg2clusters$cluster, main="Classificació k-means")
+plot(num_norm[c(1,2)], col=as.factor(ctgp2$NSP2), main="Classificació real")
+legend("topright",                   
+       legend = c("normal", "sospitós"),
+       col = 1:2, pch = 1)
+```
+
+Tant en 2 com en 3 clústers, la divisió que proposa k-means difereix visiblement de les etiquetes diagnòstiques.\
+<br>
+
+Fem una altra comparació, aquest cop només per 3 clústers, amb les variables ALTV i ACps:
+
+```{r}
+plot(num_norm[c(1,7)], col=ctg3clusters$cluster, main="Classificació k-means")
+plot(num_norm[c(1,7)], col=as.factor(ctgp2$NSP), main="Classificació real")
+legend("topright",                   
+       legend = c("normal", "sospitós", "patològic"),
+       col = 1:3, pch = 1)
+```
+
+A la classificació real veiem com la categoria 'normal' es distribueix tot al llarg dels valors mitjans baixos de ACps, i desapareix per complet en els valors alts d'ALTV. En canvi, l'algorisme k-means situa dos grups diferents al llarg de la variable ACps, i també situa un tercer grup ocupant tots els valors de la variable ALTV que tenen 0 com a valors d'ACps.\
+\
+<br>
+
+Fem una última comparació entre les variables ALTV i FMps:
+
+```{r}
+plot(num_norm[c(2,7)], col=ctg3clusters$cluster, main="Classificació k-means")
+plot(num_norm[c(2,7)], col=as.factor(ctgp2$NSP), main="Classificació real")
+legend("topright",                   
+       legend = c("normal", "sospitós", "patològic"),
+       col = 1:3, pch = 1)
+```
+
+Veiem un efecte semblant a la comparació anterior. A la classificació real, els valors baixos, propers a 0, de la variable FMps, mostren registres distribuïts a través de la variable ALTV de forma que podem identificar els tres grups diferents. El grup 'normal' té, o bé valor 0 de FMps, o bé valor 0 de ALTV. En canvi, a la classificació amb k-means, trobem un grup amb valors 0 de FMps, i els altres dos grups amb valors 0 d'ALTV. Es tracta doncs d'una classificació força diferent en el cas de la relació entre aquestes dues variables.\
+\
+<br>\
+\
+
+## Exercici 2
+
+<br>
+
+Ara generarem un segon model de classificació no supervisada, però aquest cop utilitzarem la fórmula de correlació de Pearson absoluta com a mètrica per mesurar la distància.
+
+<br>
+
+```{r}
+library(amap)
+ctg3clusters_abpearson <- Kmeans(num_norm, 3, method = "abspearson")
+```
+
+<br>
+
+Comparem el nou model, amb 3 clústers, amb la classificació real, per les variables ALTV i ASTV:
+
+```{r}
+plot(num_norm[c(6,7)], col=ctg3clusters_abpearson$cluster, main="Classificació k-means")
+plot(num_norm[c(6,7)], col=as.factor(ctgp2$NSP), main="Classificació real")
+```
+
+Com en el model anterior, els 3 clústers que genera el model no s'acaben d'ajustar al tres grups diagnòstics.\
+<br>
+
+Ara compararem, per les variables ALTV i FMps, el primer model que ja teníem, el model amb absolute Pearson, i la classificació real:
+
+```{r}
+plot(num_norm[c(2,7)], col=ctg3clusters$cluster, main="Classificació k-means")
+plot(num_norm[c(2,7)], col=ctg3clusters_abpearson$cluster, main="Classificació k-means/abspearson")
+plot(num_norm[c(2,7)], col=as.factor(ctgp2$NSP), main="Classificació real")
+legend("topright",                   
+       legend = c("normal", "sospitós", "patològic"),
+       col = 1:3, pch = 1)
+```
+
+Als gràfics veiem com, malgrat que els dos models k-means no són idèntics, tendeixen a dividir els clústers de forma similar, i cap dels dos s'aproxima a la classificació real.\
+<br>
+
+Fem el mateix tipus de comparació per les variables ASTV i DPps, on veurem el mateix efecte:
+
+```{r}
+plot(num_norm[c(5,6)], col=ctg3clusters_abpearson$cluster, main="Classificació k-means/abspearson")
+plot(num_norm[c(5,6)], col=ctg3clusters$cluster, main="Classificació k-means")
+plot(num_norm[c(5,6)], col=as.factor(ctgp2$NSP), main="Classificació real")
+legend("topright",                   
+       legend = c("normal", "sospitós", "patològic"),
+       col = 1:3, pch = 1)
+```
+
+\
+<br>
+
+```{r}
+ctg2clusters_abpearson <- Kmeans(num_norm, 2, method = "abspearson")
+```
+
+\
+<br>
+
+Ara fem una última comparació per les mateixes variables ASTV i DPps, però aquest cop comparem per 2 clústers:
+
+```{r}
+plot(num_norm[c(5,6)], col=ctg2clusters$cluster, main="Classificació k-means")
+plot(num_norm[c(5,6)], col=ctg2clusters_abpearson$cluster, main="Classificació k-means/abspearson")
+plot(num_norm[c(5,6)], col=as.factor(ctgp2$NSP2), main="Classificació real")
+legend("topright",                   
+       legend = c("normal", "sospitós"),
+       col = 1:2, pch = 1)
+```
+
+El primer algorisme k-means talla horitzontalment el gràfic: divideix clarament els grups segons els valors de la variable ASTV. Amb la mètrica abspearson, l'algorisme classifica en un clúster els valors superiors de ASTV, i també aquells que tenen valors alts d'ambdues variables. En aquest sentit, la divisió de clústers s'assembla més a la classificació real, tot i que no classifica bé els valors intermedis.
+
+\
+<br>\
+<br>\
+
+## Exercici 3
+
+<br>
+
+```{r}
+if (!require('dbscan')) install.packages('dbscan'); library('dbscan')
+```
+
+<br>
+
+Fem una primera prova de l'algorisme DBSCAN amb un valor arbitrari d'eps = 1:
+
+```{r}
+tryeps <- dbscan(num_norm, eps = 1)
+tryeps
+```
+
+L'algorisme genera un sol clúster. Caldrà cercar un valor eps diferent.
+
+<br>
+
+Generem un gràfic de distància k que ens pugui donar pistes del valor òptim d'eps:
+
+```{r}
+kNNdistplot(num_norm, k = 5)
+abline(h=.25, col = "red", lty=2)
+```
+
+Amb la línia vermella hem indicat la zona on es podria trobar el valor d'eps que ens interessa, que seria entre 0.2 i 0.3.\
+<br>
+
+Després de diferents intents entorn a aquests valors, trobem que amb el valor eps=0.29 obtenim 3 clústers i només 7 registres cauen fora de la classificació:
+
+```{r}
+ctg_dbs <- dbscan(num_norm, eps = .29)
+
+ctg_dbs
+```
+
+\
+<br>
+
+Ara utilitzarem l'algorisme OPTICS, i guardarem la variable que resulta d'extreure el dbscan per tal d'avaluar el model:
+
+```{r}
+opti <- optics(num_norm)
+opt <- extractDBSCAN(opti, eps_cl = .29)
+opt
+```
+
+\
+<br>
+
+Visualitzem els resultats de la classificació. Recordem que, també en la nostra classificació real, tenim un grup molt nombrós (diagnòstic 'normal') i dos grups molt menys nombrosos (diagnòstics 'sospitós' i 'patològic'):
+
+```{r}
+summary(as.factor(ctg1$NSP))
+```
+
+Veiem que en els 3 clústers generats per l'algorisme optics aquesta diferència encara és més gran (només 8 i 23 registres en el 2n i 3r grup respectivament). Per aquest motiu, els gràfics no seran fàcils d'interpretar.
+
+```{r}
+plot(opt)
+```
+
+\
+<br>
+
+Veiem una comparativa entre la classificació amb dbscan i la classificació real, per a totes les variables 2 a 2:
+
+```{r}
+pairs(num_norm, col= opt$cluster)
+```
+
+\
+<br>
+
+```{r}
+pairs(num_norm, col= ctgp2$NSP)
+```
+
+<br>
+
+Es fa difícil observar les diferències. Vegem doncs una comparació només per les variables ALTV i FMps:
+
+```{r}
+plot(num_norm[c(2,7)], col=opt$cluster, main="Classificació DBSCAN")
+plot(num_norm[c(2,7)], col=as.factor(ctgp2$NSP), main="Classificació real")
+legend("topright",                   
+       legend = c("normal", "sospitós", "patològic"),
+       col = 1:3, pch = 1)
+```
+
+<br>
+
+```{r}
+hullplot(num_norm[c(2,7)], opt)
+```
+
+Veiem en els gràfics que, comparant la classificació dbscan amb la classificació real, els resultats no semblen més gaire acurats respecte als models k-means que hem generat anteriorment.
+
+<br>
+
+Obtenim, amb l'índex de silhouette, una mètrica d'avaluació del model generat amb dbscan:
+
+```{r}
+noise <- opt$cluster==0
+clusters <- opt$cluster[!noise]
+d <- dist(num_norm[!noise, 1:7])
+```
+
+```{r}
+silh <- silhouette(clusters, d)
+plot(silh, border=NA, col=sort(clusters), main="")
+```
+
+Si tenim en compte que els valors de l'índex de silhouette se situen entre -1 i 1, el valor que obtenim de 0.34 indica una qualitat d'agrupament acceptable.\
+<br>
+
+En definitiva, els tres models comparats fins ara (kmeans, kmeans amb mètrica de Pearson, i dbscan) generen grups que s'emmirallen d'alguna manera amb la classificació real segons l'etiqueta diagnòstica NSP, sobretot per que fa als valors extrems dels parells de variables, i també en el sentit que agrupen 3 clústers de mides similars (1 grup nombrós i 2 grups minoritaris). Malgrat això, cap dels tres models encerta a separar de forma gaire acurada els registres amb combinacions de valors intermedis en les diferents variables.\
+<br>\
+<br>\
+
+## Exercici 4
+
+<br>
+
+Per la creació d'un model d'arbre de decisió, tenint en compte que l'aplicació i interpretació del model seran més fàcils i eficients si treballem amb variables categòriques, tenim la possibilitat de fer una nova selecció de variables. Tanmateix, per tal de seguir responent a l'objectiu inicial de recerca, ens interessa seguir incloent les variables que el sistema SisPorto mesura (recordem que no totes les variables de les quals disposem estan mesurades amb SisPorto). Així doncs, proposem fer algunes proves amb dos grups de variables. El primer inclourà la versió discretitzada de les variables mesurades amb SisPorto, a més de les variables diagnòstiques 'AD' (patró d'estrès) i 'DE' (patró de desacceleració), i el segon afegirà a aquesta mateixa selecció les variables diagnòstiques 'A' (son calmat), 'B' (son REM), 'C' (vetlla calmada), i 'D' (vetlla activa):
+
+```{r}
+cat_ctg <- ctg1[c('AD', 'DE', 'AC_d', 'FM_d', 'UC_d', 'DL_d', 'DP_d', 'NSP2')]
+
+cat_ctg_ext <- ctg1[c('A', 'B', 'C', 'D','AD', 'DE', 'AC_d', 'FM_d', 'UC_d', 'DL_d', 'DP_d', 'NSP2')]
+```
+
+<br>
+
+Creem conjunts train i test per a les dues mostres:
+
+```{r}
+set.seed(666)
+y <- cat_ctg[,8] 
+X <- cat_ctg[,1:7]
+```
+
+```{r}
+set.seed(666)
+y2 <- cat_ctg_ext[,12] 
+X2 <- cat_ctg_ext[,1:11]
+```
+
+\
+<br>
+
+```{r}
+split_prop <- 3 
+indexes = sample(1:nrow(cat_ctg), size=floor(((split_prop-1)/split_prop)*nrow(cat_ctg)))
+trainX<-X[indexes,]
+trainy<-y[indexes]
+testX<-X[-indexes,]
+testy<-y[-indexes]
+```
+
+```{r}
+split_prop <- 3 
+indexes = sample(1:nrow(cat_ctg_ext), size=floor(((split_prop-1)/split_prop)*nrow(cat_ctg_ext)))
+trainX2<-X2[indexes,]
+trainy2<-y2[indexes]
+testX2<-X2[-indexes,]
+testy2<-y2[-indexes]
+```
+
+\
+<br>
+
+Comprovem que la divisió de conjunts sigui equilibrada:
+
+```{r}
+sum(summary(trainy))
+sum(summary(trainX$AD))
+sum(summary(testy))
+sum(summary(testX$DE))
+
+sum(summary(trainy2))
+sum(summary(trainX2$A))
+sum(summary(testy2))
+sum(summary(testX2$B))
+```
+
+\
+<br>
+
+Mostrem les regles del primer arbre de decisió:
+
+```{r}
+model1 <- C50::C5.0(trainX, trainy, rules=TRUE)
+summary(model1)
+```
+
+Comparem amb l'arbre de decisió per la segona mostra:
+
+```{r}
+model2 <- C50::C5.0(trainX2, trainy2, rules=TRUE)
+summary(model2)
+```
+
+El primer arbre de decisió genera 5 regles, i obté una estimació d'error entorn un 11%. (\* els percentatges d'errors i índexs de precisió que s'indiquen d'ara en endavant són aproximats, ja que varien lleugerament en cada execució de l'algorisme, i per tant també varien quan exportem el document de Rmd a Html).
+
+Les variables més utilitzades són DP_d (desacceleracions perllongades), FM_d (moviments fetals), i AD (patró d'estrès), que és una variable diagnòstica.
+
+Pel que fa a la segona mostra, amb 12 variables, l'arbre de decisió genera 7 regles, amb una estimació d'error de només entre un 1% i un 2%.
+
+Mostrem gràficament els arbres dels dos models:
+
+\
+<br>
+
+```{r, fig.width=15, fig.height=10}
+model1_plot <- C50::C5.0(trainX, trainy)
+plot(model1_plot)
+```
+
+```{r}
+predicted_model1 <- predict( model1, testX, type="class" )
+print(sprintf("La precisió de l'arbre de decisió es: %.4f %%",100*sum(predicted_model1 == testy) / length(predicted_model1)))
+```
+
+```{r, fig.width=12, fig.height=10}
+model2_plot <- C50::C5.0(trainX2, trainy2)
+plot(model2_plot)
+```
+
+\
+<br>
+
+```{r}
+predicted_model2 <- predict( model2, testX2, type="class" )
+print(sprintf("La precisió de l'arbre de decisió del segon model és: %.4f %%",100*sum(predicted_model2 == testy2) / length(predicted_model2)))
+```
+
+\
+<br>
+
+D'aquests resultats, ens crida l'atenció la precisió del segon model. Sembla que és un model gairebé perfecte, amb una estimació d'error d'un 1.5% i una precisió de 98%. Això ens fa necessàriament sospitar de l'adequació del model. De fet, el primer model, amb un 86% de precisió, tampoc es queda curt.
+
+La diferència entre els dos models té a veure amb la inclusió de variables diagnòstiques sumades a les variables mesurades per SisPorto. En el primer model en tenim dues, i en el segon model en tenim fins a 6. Una variable diagnòstica és, al capdavall, una variable classificatòria, i per tant té una funció similar a la variable NSP que estem utilitzant com a referència per supervisar el model. Pot ser doncs que això sigui un error de plantejament: si prenem com a exemple la variable AD (patró d'estrès), el sistema que classifica cada registre com a 0 o 1 en AD és el mateix sistema que classifica cada registre com a 1, 2 o 3 en la variable NSP, i és per tant poc sorprenent que la variable AD sigui predictora de NSP. Pot ser que el model sigui tan precís perquè reflecteix un efecte de circularitat: equivaldria a dir que un pacient està deprimit perquè té un trastorn depressiu, que és el mateix que dir que un pacient té un trastorn depressiu perquè està deprimit, quan el que ens interessa és establir que un pacient té un trastorn depressiu perquè té una desregulació del son, apatia, pensaments negatius, etc.
+
+Així doncs, ens sembla que seria més correcte generar un model on prescindim de totes les variables classificatòries, i utilitzem només les variables mesurades amb SisPorto. Creiem que només així podem respondre al nostre objectiu inicial d'estudi. A més, això ens permetrà comparar els models no supervisats amb els models supervisats, ja que estarem treballant bàsicament amb les mateixes variables.\
+
+\
+<br>
+
+Hi ha dues variables mesurades per SisPorto, que hem utilitzat en els nostres models no supervisats, que encara no havíem discretitzat. Són ASTV (percentatge de temps amb variabilitat anormal de curta durada) i ALTV (percentatge de temps amb variabilitat anormal de llarga durada). Fem ara aquesta discretització:
+
+```{r}
+library(arules)
+```
+
+```{r}
+ctg_plus <- ctg1
+ctg_plus$ASTV_d <- discretize(ctg_plus$ASTV, method = "cluster", labels = c("low", "medium", "high"))
+ctg_plus$ALTV_d <- discretize(ctg_plus$ALTV, method = "cluster", labels = c("low", "medium", "high"))
+
+summary(ctg_plus$ASTV_d)
+summary(ctg_plus$ALTV_d)
+```
+
+<br>
+
+Creem ara una tercera mostra que inclou aquestes dues variables i descarta totes les variables diagnòstiques, excepte NSP2, que serà la nostra variable classificatòria:
+
+```{r}
+
+cat_ctg3 <- ctg_plus[c('ASTV_d', 'ALTV_d','AC_d', 'FM_d', 'UC_d', 'DL_d', 'DP_d', 'NSP2')]
+```
+
+\
+<br>
+
+Fem els passos previs per generar l'arbre de decisió:
+
+```{r}
+set.seed(666)
+y3 <- cat_ctg3[,8] 
+X3 <- cat_ctg3[,1:7]
+```
+
+```{r}
+split_prop <- 3 
+indexes = sample(1:nrow(cat_ctg3), size=floor(((split_prop-1)/split_prop)*nrow(cat_ctg3)))
+trainX3<-X3[indexes,]
+trainy3<-y3[indexes]
+testX3<-X3[-indexes,]
+testy3<-y3[-indexes]
+```
+
+```{r}
+sum(summary(trainy3))
+sum(summary(trainX3$ASTV_d))
+sum(summary(testy3))
+sum(summary(testX3$ALTV_d))
+```
+
+\
+<br>
+
+Mostrem les regles d'aquest tercer arbre de decisió:
+
+```{r}
+model3 <- C50::C5.0(trainX3, trainy3, rules=TRUE)
+summary(model3)
+```
+
+L'arbre genera 4 regles de decisió, obté una estimació d'error d'un 10%, i utilitza tres variables: ALTV, DP i ASTV.\
+<br>
+
+Mostrem gràficament l'arbre de decisió:
+
+```{r, fig.width=12, fig.height=10}
+model3_plot <- C50::C5.0(trainX3, trainy3)
+plot(model3_plot)
+```
+
+\
+<br>
+
+Veiem que aquest model obté una precisió del 87%:
+
+```{r}
+predicted_model3 <- predict( model3, testX3, type="class" )
+print(sprintf("La precisió de l'arbre de decisió es: %.4f %%",100*sum(predicted_model3 == testy3) / length(predicted_model3)))
+```
+
+\
+<br>
+
+Ara mostrem en detall una matriu de confusió on podem comparar la predicció del model amb les dades del conjunt test:
+
+```{r}
+if(!require(gmodels)){
+    install.packages('gmodels', repos='http://cran.us.r-project.org')
+    library(gmodels)
+}
+```
+
+\
+<br>
+
+```{r}
+CrossTable(testy3, predicted_model3,prop.chisq  = FALSE, prop.c = FALSE, prop.r =FALSE,dnn = c('Reality', 'Prediction'))
+```
+
+\
+<br>
+
+Ara creem un segon model que inclogui adaptive boosting:
+
+```{r}
+model3_ab <- C50::C5.0(trainX3, trainy3, trials = 100)
+```
+
+\
+<br>
+
+Veiem que amb aquesta modificació obtenim una petita millora (d'entorn un 1%) en la precisió del model:
+
+```{r}
+predicted_model3_ab <- predict( model3_ab, testX3, type="class" )
+print(sprintf("La precisió del model amb adaptive boosting: %.4f %%",100*sum(predicted_model3_ab == testy) / length(predicted_model3_ab)))
+```
+
+\
+<br>
+
+Mostrem la matriu de confusió pel model amb adaptive boosting:
+
+```{r}
+CrossTable(testy3, predicted_model3_ab, prop.chisq  = FALSE, prop.c = FALSE, prop.r =FALSE,dnn = c('Reality', 'Prediction'))
+```
+
+Si comparem les dues matrius de confusió, veiem que la millora de precisió es reflecteix prinicipalment en la detecció de veritables negatius (categoria 'Suspect'). Respecta al primer model, el model amb adaptive boosting prediu més casos sospitosos que realment ho són. Al mateix temps, el nombre de casos classificats erròniament com a normals es redueix amb adaptive boosting. Així doncs, malgrat que l'augment de precisió és només d'entorn els 2 punts percentuals, el segon model respon de forma més efectiva als nostres objectius.
+
+<br>\
+<br>\
+
+## Exercici 5
+
+<br>
+
+Ara generem un model amb l'algorisme Random Forest que classifica els registres segons les mateixes variables que hem utilitzat fins ara. Dividim els conjunts d'entrenament i test:
+
+```{r}
+set.seed(123)
+
+samp <- sample(nrow(cat_ctg3), 0.6669 * nrow(cat_ctg3))
+
+train <- cat_ctg3[samp, ]
+
+test <- cat_ctg3[-samp, ]
+```
+
+\
+<br>
+
+I apliquem el model:
+
+```{r}
+library(randomForest)
+```
+
+```{r}
+model_rf <- randomForest(NSP2~., data = train)
+model_rf
+```
+
+Obtenim una estimació d'error del 11%, havent utilitzat 2 variables a cada bifurcació del model.\
+<br>\
+Amb aquest model obtenim una precisió del 88%, un nivell similar als models d'arbre de decisió anteriors (lleugerament per sota del model amb adaptive boosting):
+
+```{r}
+prediction_rf <- predict(model_rf, newdata = test)
+sum(prediction_rf==test$NSP2) / nrow(test)
+```
+
+<br>
+
+A la representació gràfica del model veiem com les variables que es consideren com a més importants en la predicció del model són ASTV, ALTV, AC i DP (el nombre 'MeanDecreaseGini indica quin percentatge decauria la precisió de la predicció si alguna d'aquestes variables no es tingués en compte):
+
+```{r}
+varImpPlot(model_rf)
+```
+
+\
+<br>
+
+Tot seguit, mostrem les matrius de confusió dels models d'arbre decisió sense i amb boosting, i del model Random Forest:
+
+```{r}
+library(caret)
+```
+
+\
+<br>
+
+```{r}
+  confusionMatrix(data= predicted_model3, reference = testy3)
+```
+
+\
+\
+<br>
+
+```{r}
+confusionMatrix(data=predicted_model3_ab, reference = testy3)
+```
+
+\
+<br>
+
+```{r}
+confusionMatrix(data=prediction_rf, reference = test$NSP2)
+```
+
+Ja havíem comparat els dos primers models, i vèiem que el model amb adaptive boosting obté major precisió, però sobretot obté una especificitat molt més gran (classifica correctament com a casos sospitosos els que realment ho són). El model Random Forest no millora els resultats del model amb adaptive boosting, tot i que la seva sensibilitat és molt alta.\
+<br>\
+\
+<br>\
+
+## Exercici 6
+
+<br>
+
+El nostre estudi tenia com a objectiu plantejar models amb una alta capacitat de classificació. Concretament, ens interessava optimitzar l'especificitat dels possibles models de selecció, ja que imaginàvem el cas en què en l'anàlisi d'algunes cardiotocografies, el sistema SisPorto havia diagnosticat com a normal alguns fetus amb patrons anòmals de ritme cardíac.
+
+El nostre joc de dades tenia fins a 40 variables de diferents tipus, incloent les mesures del sistema SisPorto, però també altres variables amb càlculs derivats dels registres, i variables categòriques diagnòstiques.
+
+Per tal de centrar-nos en l'objectiu d'anàlisi, i també per poder comparar els resultats dels diferents models, ens hem cenyit a les variables mesurades pel sistema SisPorto tant pels models no supervisats com pels models supervisats (hem discretitzat variables per adaptar-les als models supervisats).
+
+Hem constatat que els models no supervisats no mostren, en el cas del nostre joc de dades, una gran capacitat de classificar correctament segons els 3 grups diagnòstics (variable NSP: 'normal', 'sospitós' i 'patològic'). Val a dir però que els models no supervisats k-means sí que identifica un nombre òptim de clústers (2 o 3) que té relació amb aquesta mateixa variable classificatòria que nosaltres coneixem d'entrada. Quan, per avaluar els models no supervisats que hem generat (k-means, k-means amb mètrica absolute Pearson i DBSCAN), fem comparacions entre l'agrupació de l'algorisme i les dades reals per 2 variables, veiem repetidament que els models tenen dificultats per discriminar correctament els registres que mostren valors intermedis de les variables. Una altra dificultat, que es fa visible especialment en l'aplicació del model DBSCAN, és que els nostres 3 grups diagnòstics tenen mides molt desiguals: els casos patològics representen una part petita dels registres, i la majoria de casos són diagnosticats com a normals. El model DBSCAN exagera aquesta desigualtat, i classifica com a patològics una quantitat excessivament petita de registres. En definitiva, un model no supervisat, almenys entre els que hem estudiat, no seria una bona opció per detectar casos patològics de forma automàtica.
+
+Pel que fa als models supervisats, hem trobat que, en general, aconseguíem uns índexs de precisió molt alts. La quantitat de registres i variables semblava formar una bona base per l'entrenament dels algorismes, tant pel que fa als arbres de decisió com l'algorisme Random Forest. En ambdós casos, no semblava tampoc que hi hagués un problema de sobreentrenament, ja que els algorismes seguien mostrant bons resultats sobre els conjunts test. Hem constatat que, entre els 3 models supervisats que hem generat, el model d'arbre de decisió amb adaptive boosting mostra el nivell d'especificitat més alt, i classifica erròniament casos patològics amb menor freqüència comparat amb els altres dos models. Tanmateix, si imaginem utilitzar aquest algorisme per detectar de forma automàtica els casos patològics, trobem que encara hi ha massa casos que es classifiquen com a normals que en realitat són patològics. I aquí rau el perill d'utilitzar aquests models en el nostre cas concret. Tot i que hem pogut generar models supervisats amb bons índexs de precisió, cal tenir present la rellevància de l'error que suposa diagnosticar com a normal una cardiotocografia d'un fetus que té un patró patològic de ritme cardíac. Això no significa necessàriament que els nostre models, o d'altres més òptims que es puguin generar, no siguin útils, sinó que cal seguir utilitzant-los com a suport o contrast a l'avaluació d'un expert que pugui tenir en compte altres variables més enllà de les mesurades per sistema automàtic SisPorto.
+
+<br>\
+<br>

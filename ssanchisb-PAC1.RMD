@@ -1,0 +1,856 @@
+---
+title: 'Mineria de dades: PAC1'
+author: "Autor: Salvador Sanchis Beneseit"
+date: "Març 2022"
+output:
+  html_document:
+    highlight: default
+    number_sections: yes
+    theme: cosmo
+    toc: yes
+    toc_depth: 3
+    includes:
+      in_header: 05.584-PAC-header.html
+  word_document: default
+  pdf_document:
+    highlight: zenburn
+    toc: yes
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+------------------------------------------------------------------------
+
+# Exercicis
+
+------------------------------------------------------------------------
+
+## Exercici 1
+
+<br>
+
+### Presentació de les dades
+
+El nostre projecte parteix del dataset expeditions.csv, que forma part de la base de dades The Himalayan Database, i que podem trobar a <https://github.com/rfordatascience/tidytuesday/blob/master/data/2020/2020-09-22/readme.md>
+
+Es tracta d'un joc de dades que cobreix totes les expedicions a més de 400 pics rellevants de la vessant nepalesa de l'Himàlaia, des del 1905 fins el 2019, i inclou les següents variables (informació extreta directament del repositori de Github que dóna accés a les dades):
+
+<br>
+
++--------------------+-----------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| expedition_id      | character | Unique identifier for expedition. Can be linked to `peaks` or `members` tables.                                                                                                                              |
++====================+===========+==============================================================================================================================================================================================================+
+| peak_id            | character | Unique identifier for peak. Can be linked to `peaks` table.                                                                                                                                                  |
++--------------------+-----------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| peak_name          | character | Common name for peak                                                                                                                                                                                         |
++--------------------+-----------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| year               | double    | Year of expedition                                                                                                                                                                                           |
++--------------------+-----------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| season             | character | Season of expedition (Spring, Summer, etc.)                                                                                                                                                                  |
++--------------------+-----------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| basecamp_date      | date      | Date of expedition arrival at basecamp                                                                                                                                                                       |
++--------------------+-----------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| highpoint_date     | date      | Date of expedition summiting the peak for the first time or, if peak wasn't reached, date of reaching its highpoint                                                                                          |
++--------------------+-----------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| termination_date   | date      | Date the expedition was terminated                                                                                                                                                                           |
++--------------------+-----------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| termination_reason | character | Primary reason the expedition was terminated.                                                                                                                                                                |
++--------------------+-----------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| highpoint_metres   | double    | Elevation highpoint of the expedition                                                                                                                                                                        |
++--------------------+-----------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| members            | double    | Number of expedition members. For expeditions in Nepal, this is usually the number of foreigners listed on the expedition permit. For expeditions in China, this is usually the number of non-hired members. |
++--------------------+-----------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| member_deaths      | double    | Number of expeditions members who died                                                                                                                                                                       |
++--------------------+-----------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| hired_staff        | double    | Number of hired staff who went above basecamp                                                                                                                                                                |
++--------------------+-----------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| hired_staff_deaths | double    | Number of hired staff who died                                                                                                                                                                               |
++--------------------+-----------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| oxygen_used        | logical   | Whether oxygen was used by at least one member of the expedition                                                                                                                                             |
++--------------------+-----------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| trekking_agency    | character | Name of the trekking agency                                                                                                                                                                                  |
++--------------------+-----------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+
+<br>
+
+### Definició de la tasca
+
+Partint d'aquest joc de dades, plantegem una tasca de **descripció**.
+Ens interessa revelar possibles associacions entre les variables per respondre a possibles preguntes com, per exemple: s'ha reduït la mortalitat a les expedicions en l'últim segle?
+L'ús d'oxigen augmenta la possibilitat d'èxit d'una expedició?
+En redueix la mortalitat?
+El temps que dura una expedició afecta l'alçada que aquesta aconsegueix assolir?
+L'ús d'oxigen es relaciona amb la mida i la duració d'una expedició?
+Hi ha més mortalitat en una estació de l'any?
+
+Per a poder descriure aquestes possibles associacions entre variables, proposem crear un model de xarxa bayesiana, que ens permetria observar de forma simple quines variables es relacionen amb quines altres.
+
+### Preparació de les dades
+
+Havent realitzat un primer cop d'ull a les dades, constatem que caldrà un treball de neteja.
+Diverses de les variables contenen camps buits, especialment pel que fa a les dates d'inici i final de l'expedició, i l'alçada màxima assolida.
+Haurem de decidir si eliminar o imputar aquestes dades.
+També haurem de tractar els valors anòmals (hem detectat que el nombre de membres de les expedicions no conté valors buits, però sí molts zeros i alguns valors extrems).
+
+Caldrà també tractar algunes incongruències, com el fet que hi hagi dates d'inici d'expedició posteriors a la finalització, o nombre de morts superior al nombre de membres de l'expedició (ambdós exemples els hem efectivament trobat a les dades).
+
+També ens interessarà transformar algunes de les dades.
+Derivarem la duració de les expedicions a partir de les dates d'inici i finalització, creant una nova variable, que posteriorment també categoritzarem per tal de classificar les expedicions en diverses categories segons la seva duració.
+D'altra banda, com que el nombre de morts es desglossa entre membres i treballadors contractats, crearem una variable que agrupi el nombre total de morts per expedició, l'expressarem com a percentatge del nombre de participants en l'expedició, i posteriorment la categoritzarem per poder separar expedicions amb índex de mortalitat alt o baix.
+
+Hem detectat que la variable "trekking agency" conté molts valors buits, i un nombre molt gran de nivells.
+Descartarem aquesta variable, ja que no ens sembla que pugui oferir informació rellevant, i així reduïm també el nombre d'atributs a analitzar.
+
+Pel que fa al nombre de registres, partim de més de 10000 casos, i per tant podem plantejar que, enfront de l'existència de valors nuls en diverses variables, l'opció d'eliminar registres pugui tenir un efecte menys distorsionant que la imputació.
+
+Finalment, normalitzarem també les diverses dades numèriques de les quals disposem per tal de poder aplicar models que ens permetin potencialment agrupar atributs.
+
+### Anàlisi i model
+
+Per les característiques del nostre joc de dades i l'objectiu que plantegem, entenem que els models que generem s'emmarcaran dintre de l'anàlisi estadística descriptiva, si bé també podem contemplar la possibilitat de prendre algunes variables com a dependents (mortalitat, alçada màxima...) i fer algun estudi inferencial.
+
+Provarem de fer també una anàlisi de components principals per veure si és possible extreure dimensions comunes.
+
+### Avaluació, interpretació i integració
+
+Pel que fa a l'avaluació dels nostres models, haurem de recolzar-nos en les visualitzacions que generem (on mostrem relacions entre variables) i en els estadístics de correlació que puguem obtenir.
+D'aquestes visualitzacions i correlacions se'n derivarà la nostra interpretació, amb la qual establirem si hi ha major o menor relació entre les variables que estudiem.
+Combinant d'una banda diferents associacions entre dues o tres variables amb, de l'altra banda, la creació d'un mapa basat en una xarxa bayesiana que inclogui totes les variables, podem integrar el nostre estudi fent una presentació que es recolzi en les eines de visualització per tal de fer perceptibles de forma immediata les relacions entre els diferents atributs dels quals disposem.
+
+<br>
+
+<br>
+
+## Exercici 2
+
+<br>
+
+### Verificació de les dades
+
+<br>
+
+Carreguem les dades:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Carreguem el joc de dades
+expeditions <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-09-22/expeditions.csv')
+
+```
+
+<br>
+
+Per reduir una mica la complexitat del joc de dades, decidim prescindir de la variable "trekking agency", que creiem que no ens genera informació rellevant pel tipus d'estudi que plantegem.
+
+Comprovem que aquesta variable inclou un nombre excessivament gran de factors, que no permeten agrupar la mostra de forma prou simple:
+
+```{r}
+agencies <- as.factor(expeditions$trekking_agency)
+nlevels(agencies)
+```
+
+<br>
+
+Així doncs, eliminem la variable:
+
+```{r}
+expeditions$trekking_agency <- NULL
+```
+
+<br>
+
+Un cop fet això, visualitzem les 5 primeres files per fer-nos una primera idea de l'aspecte del joc de dades:
+
+```{r}
+as.data.frame(head(expeditions))
+```
+
+<br>
+
+Mostrem la mida del dataset.
+Conté 10364 casos i 15 variables:
+
+```{r}
+dim(expeditions)
+```
+
+<br>
+
+Ara mostrem les característiques de les variables i els seus estadístics descriptius bàsics:
+
+```{r}
+summary(expeditions)
+```
+
+<br>
+
+Observem que hi ha diverses variables amb valors nuls.
+En fem un resum:
+
+```{r}
+colSums(is.na(expeditions))
+```
+
+<br>
+
+Un primer valor nul que ens crida l'atenció és a la variable "peak name", on hi ha un sol valor buit.
+Comprovem aquest registre, i veiem que només es tracta d'una mancança al nom del pic en qüestió.
+Decidim no alterar aquest registre, ja que la resta de variables semblen coherents, i podem realitzar l'estudi sense necessitat de saber el nom del pic en cada cas.
+
+```{r}
+as.data.frame(expeditions[is.na(expeditions$peak_name),])
+```
+
+Comprovem que no hi ha altres registres amb el mateix nom/codi:
+
+```{r}
+library(stringr)
+as.data.frame(expeditions[str_detect(expeditions$expedition_id, "SPHU"),])
+```
+
+<br>
+
+Les variables on ja hi veiem una quantitat més grans de valors nuls són les variables "basecamp date", "highpoint date" i termination date". Aquestes tres variables estan relacionades, i ens interessa trobar una solució a aquesta mancança de valors. Provisionalment, crearem tres subgrups que ens poden resultar útils més endavant:
+
+```{r}
+
+# registres amb només basecamp_date:
+time_initial <- expeditions[!is.na(expeditions$basecamp_date) & is.na(expeditions$highpoint_date) & is.na(expeditions$termination_date),]
+
+# registres amb basecamp_date, però sense termination o highpoint date:
+time_partial <- expeditions[!is.na(expeditions$basecamp_date) & (is.na(expeditions$highpoint_date) | is.na(expeditions$termination_date)),]
+
+# registres sense cap data de temps:
+no_time_record <- expeditions[is.na(expeditions$basecamp_date) & is.na(expeditions$highpoint_date) & is.na(expeditions$termination_date),]
+```
+
+<br>
+
+Un cop reservats aquests subgrups, ara reduirem el joc de dades a tots aquells registres dels quals podem deduir una duració de l'expedició, ja sigui calculant de l'arribada al camp base fins la data de terminació de l'expedició, o, en absència d'aquest valor, fins la data d'assoliment d'alçada màxima.
+Per fer-ho, primer crearem una nova variable "duration":
+
+```{r}
+expeditions$duration <- ifelse(!is.na(expeditions$termination_date), as.double(expeditions$termination_date - expeditions$basecamp_date, units = "days"), as.double(expeditions$highpoint_date - expeditions$basecamp_date, units = "days"))
+```
+
+I seguidament mantenim en un nou joc de dades només els registres dels quals hem pogut deduir la duració:
+
+```{r}
+no_duration <- expeditions[is.na(expeditions$duration),]
+expeditions_duration <- expeditions[!is.na(expeditions$duration),]
+```
+
+<br>
+
+Hem decidit fer aquesta transformació en aquest punt relativament inicial de la nostra verificació de les dades per dos motius: D'una banda, ens interessa poder establir relacions entre la durada de les expedicions i altres variables com la mortalitat, les estacions, el nombre de participants, etc. i podem permetre'ns aquesta operació, ja que el nombre resultant de registres segueix sent prou gran:
+
+```{r}
+dim(expeditions_duration)
+```
+
+<br>
+
+D'altra banda, hem constatat que mantenir només els registres dels quals podem deduir la duració de l'expedició té com a resultat una reducció de valors buits en altres variables, reducció que ens resulta beneficiosa:
+
+```{r}
+sum(colSums(is.na(expeditions)))
+sum(colSums(is.na(expeditions_duration)))
+
+```
+
+<br>
+
+### Neteja de les dades
+
+<br>
+
+Un cop fet aquestes primeres adaptacions al joc de dades, ara aprofundim en la neteja d'altres valors buits i/o anòmals.
+
+En primer lloc, treballem sobre la variable "members", o hi detectem un valor aïllat:
+
+```{r}
+boxplot(expeditions_duration$members, main='members')
+```
+
+Comprovem que es tracta del valor 99, que molt sovint apareix en jocs de dades quan es desconeix la informació.
+Si examinem aquest registre, veiem que no només que la variable "hired_staff" curiosament també conté el valor 99, fet que donaria força a l'argument que es tracta d'un error o mancança (és difícil imaginar que, per coincidència, l'expedició té 99 membres i 99 treballadors):
+
+```{r}
+as.data.frame(expeditions_duration[expeditions_duration$members == 99,])
+```
+
+Així doncs, tenint en compte que només es tracta d'un sol registre, considerem oportú eliminar-lo, més que no pas provar d'imputar-ne els valors:
+
+```{r}
+expeditions_duration <- expeditions_duration[!expeditions_duration$members == 99,]
+```
+
+<br>
+
+Investigant més enllà sobre aquestes dues variables (nombre de membres i nombre de treballadors), veiem com amb la reducció que hem fet anteriorment envers un joc de dades que contingui només els registres amb la duració de l'expedició hem aconseguit reduir un gran nombre de registres on no hi havia dades sobre la quantitat de gent que participava a l'expedició (les variables no tenien valors nuls, però sovint el nombre d'expedicionaris era igual a zero).
+Concretament, en aquest moment tenim encara només 1 registre on el valor és zero per ambdues variables:
+
+```{r}
+dim(expeditions[expeditions$members == 0,])
+dim(expeditions_duration[expeditions_duration$members == 0,])
+
+dim(expeditions_duration[(expeditions_duration$members == 0) & (expeditions_duration$hired_staff == 0),])
+
+```
+
+```{r}
+as.data.frame(expeditions_duration[(expeditions_duration$members == 0) & (expeditions_duration$hired_staff == 0),])
+```
+
+Com hem fet abans, veient que es tracta d'un sol registre, l'eliminem:
+
+```{r}
+expeditions_duration <- expeditions_duration[!((expeditions_duration$members == 0) & (expeditions_duration$hired_staff == 0)),]
+```
+
+<br>
+
+Seguidament, ens fixem en la variable "season", on al joc de dades original hi havia dos valors que no concordaven amb els possibles nivells de la variable:
+
+```{r}
+table(expeditions$season)
+```
+
+Veiem però que havent eliminat els registres dels quals no en podíem deduir una duració de l'expedició també han desaparegut aquests dos valors anòmals, i per tant en aquest cas no caldrà fer cap més transformació:
+
+```{r}
+table(expeditions_duration$season)
+```
+
+<br>
+
+Tornant a les variables sobre el nombre de participants i treballadors de l'expedició, ara ens fixem en la relació entre aquests variables i les variables que registren el nombre de morts.
+Primer comprovem que el nombre d'expedicionaris morts no sigui mai més gran que el nombre total d'expedicionaris:
+
+```{r}
+expeditions_duration[expeditions_duration$members < expeditions_duration$member_deaths,]
+```
+
+Fem el mateix amb el nombre de treballadors, i allà sí que hi trobem una incongruència, hi ha 11 registres on sembla que han mort més treballadors que els consten com a participants:
+
+```{r}
+as.data.frame(expeditions_duration[expeditions_duration$hired_staff < expeditions_duration$hired_staff_deaths,])
+```
+
+<br>
+
+En aquest cas, com que es tracta d'un nombre més gran de registres, i no ens interessa seguir perdent informació, decidim igualar les variables de forma que els nombre de treballadors registrats sigui en tots casos, com a mínim, el mateix que el nombre de treballadors morts:
+
+```{r}
+#creem un subgrup amb els registres discrepants de nombre de treballador / nombre de morts:
+discrepant_death <- expeditions_duration[expeditions_duration$hired_staff < expeditions_duration$hired_staff_deaths,]
+```
+
+```{r}
+# Separem els registres sense discrepàncies en les mateixes dues variables:
+no_discrepant_death <- expeditions_duration[!(expeditions_duration$hired_staff < expeditions_duration$hired_staff_deaths),]
+```
+
+```{r}
+# Corregim els registres discrepants igualant els valors de nombre de treballadors i nombre de morts:
+discrepant_death$hired_staff <- discrepant_death$hired_staff_deaths
+```
+
+```{r}
+# Tornem a unir els grups:
+expeditions1 <- rbind(discrepant_death, no_discrepant_death)
+```
+
+```{r}
+# Ara el joc de dades ja no conté la discrepància entre nombre de treballadors i nombre de morts:
+expeditions1[expeditions1$hired_staff < expeditions1$hired_staff_deaths,]
+```
+
+<br>
+
+Recordem que hem creat la variable 'duració', que creiem que ens serà d'utilitat a l'hora d'establir relacions i extreure coneixement de les dades.
+Ara ens fixem en els registres en els quals el valor d'aquesta variable és 0 (ja hem comprovat que no hi ha valors negatius), fet que indica que hi ha alguna inconsistència en les variables d'origen ('basecamp_date', 'termination_date' o 'highpoint_date'. Efectivament, trobem 20 registres on sembla haver-hi errors en el registre de dates:
+
+```{r}
+as.data.frame(expeditions1[expeditions1$duration == 0,])
+```
+
+<br>
+
+En aquest cas sí que ens resulta complicat trobar una lògica per tal de corregir aquests errors, i per tant decidim prescindir dels 20 registres en qüestió (d'acord amb la nostra convicció de considerar la durada de les expedicions com a variable d'especial interès):
+
+```{r}
+expeditions2 <- expeditions1[!expeditions1$duration == 0,]
+dim(expeditions2)
+```
+
+<br>
+
+Un cop fetes aquestes adaptacions, ara crearem una nova variable 'member_mortality' que calcula el percentatge de membres morts a partir de les variables 'members' i 'member_deaths':
+
+```{r}
+# Per tal d'evitar l'aparició de nous valors nuls, utilitzem una funció que doni 0 com a resultat quan dividim 0/0:
+expeditions2$member_mortality <- ifelse((expeditions2$members == 0 & expeditions2$member_deaths == 0), 0, expeditions2$member_deaths / expeditions2$members)
+
+summary(expeditions2$member_mortality)
+```
+
+<br>
+
+Donem un primer cop d'ull a la distribució d'aquesta nova variable, on veiem que en la major part dels casos la mortalitat afecta a una porció petita del nombre total de membre expedicionaris:
+
+```{r}
+boxplot(expeditions2$member_mortality, main='member mortality')
+```
+
+<br>
+
+Ara realitzem la mateixa operació amb les variables referents als treballadors, creant també la nova variable 'staff_mortality':
+
+```{r}
+expeditions2$staff_mortality <- ifelse((expeditions2$hired_staff == 0 & expeditions2$hired_staff_deaths == 0), 0, expeditions2$hired_staff_deaths / expeditions2$hired_staff)
+
+summary(expeditions2$staff_mortality)
+```
+
+```{r}
+boxplot(expeditions2$staff_mortality, main='staff mortality')
+```
+
+<br>
+
+I ara finalment creem una tercera nova variable que agrupa, també en forma de percentatge, el total de morts de l'expedició en relació al total de participants (membres + treballadors):
+
+```{r}
+expeditions2$mortality <- ifelse((expeditions2$member_deaths + expeditions2$hired_staff_deaths) == 0 & (expeditions2$members + expeditions2$hired_staff) == 0, 0, (expeditions2$member_deaths + expeditions2$hired_staff_deaths) / (expeditions2$members + expeditions2$hired_staff))
+```
+
+<br>
+
+En el següent gràfic de densitat (i en resum estadístic a sota) podem veure com en la majoria de casos aquest percentatge de morts sobre el total de participants és molt baix.
+
+```{r}
+library(ggplot2)
+ggplot(mapping = aes(expeditions2$mortality)) + geom_density()
+```
+
+```{r}
+summary(expeditions2$mortality)
+```
+
+<br>
+
+Més enllà, pel que fa a la mortalitat, fem una transformació logarítmica de la variable que ens podria ser útil posteriorment, i que ens permet visualitzar la variable amb una distribució més propera a la normal:
+
+```{r}
+expeditions2$mortality_log <- log(expeditions2$mortality)
+
+ggplot(mapping = aes(expeditions2$mortality_log)) + geom_density()
+
+```
+
+<br>
+
+Un cop obtingut aquest índex de mortalitat, decidim deduir-ne encara una nova variable, aquest cop categòrica, que anomenem 'mortality_factor', i que separa la mortalitat de les expedicions en dos nivells, mortalitat 'alta' i 'baixa' (utilitzant la mitjana de la variable 'mortality' com a llindar entre les dues categories):
+
+```{r}
+expeditions2$mortality_factor<-cut(expeditions2$mortality, breaks=c(0,0.01263,1), include.lowest = TRUE, labels = c('low', 'high'))
+
+table(expeditions2$mortality_factor)
+```
+
+<br>
+
+Ara tornem a la variable 'duració' per veure'n la distribució, observant alguns valors aïllats en la part alta de la variable:
+
+```{r}
+boxplot(expeditions2$duration, main='duration')
+```
+
+<br>
+
+No ens sembla que aquests valors alts siguin del tot desproporcionats.
+Per tant, no els corregirem, però sí que generarem una nova variable categòrica que anomenem 'duration_factor' on cataloguem aquests valors com 'molt llarg'.
+
+```{r}
+expeditions2$duration_factor<-cut(expeditions2$duration, breaks = c(0,30,60,90,Inf), include.lowest = TRUE, labels = c('short', 'medium', 'long', 'very long'))
+
+table(expeditions2$duration_factor)
+```
+
+<br>
+
+Arribats aquí considerem que no cal netejar més les dades, i fem un sumari del que hem obtingut:
+
+```{r}
+summary(expeditions2)
+```
+
+Abans de procedir però, ens fixem en la variable 'highpoint_metres', on encara tenim 50 valors nuls:
+
+```{r}
+dim(expeditions2[is.na(expeditions2$highpoint_metres),])
+```
+
+<br>
+
+No considerem que sigui necessari descartar o corregir aquests registres, però sí que crearem un joc de dades on aquests registres no hi apareguin, i que podem utilitzar quan vulguem considerar la màxima alçada aconseguida com a variable d'interès.
+
+Així doncs, conclourem aquest fase creant i guardant dos jocs de dades, 'himalaya.csv', amb les dades netes, i 'all_height.csv', on prescindim dels registres sense alçada màxima:
+
+```{r}
+filename1 <- "himalaya.csv"
+filename2 <- "all_height.csv"
+all_height <- expeditions2[!is.na(expeditions2$highpoint_metres),]
+himalaya_clean <- write.csv(expeditions2, file = filename1)
+himalaya_no_height <- write.csv(all_height, file = filename2)
+
+himalaya <- expeditions2
+```
+
+<br>
+
+### Resum de la fase inicial
+
+Resumint el treball fet fins aquí destaquem que hem eliminat la variable 'trekking_agency' i hem creat una nova variable 'duration' que calcula la duració de l'expedició a partir de les dates d'arribada al camp base i final d'expedició (o arribada al punt d'alçada màxim).
+Aquesta operació ens ha permès reduir un gran nombre de valors buits i ha corregit alguns errors, com els de la variable 'season'.
+Hem prescindit dels registres dels quals no en podíem deduir la duració de l'expedició, i/o el nombre de participants.
+Hem creat les noves variables numèriques 'member_mortality', 'staff_mortality', 'mortality' i 'mortality_log', i les categòriques 'mortality_factor' i 'duration_factor'.
+El dataset resultant 'Himalaya' sobre el qual treballarem conté 9123 observacions sobre 22 variables.
+
+<br>
+
+### Exploració de les dades
+
+<br>
+
+Un cop fetes les transformacions i neteges, veiem una mica quins altres aspectes de les dades podem explorar.
+
+Visualitzem una primera matriu de correlacions entre diverses variables d'interès:
+
+```{r}
+library(ggplot2)
+library(GGally)
+ggpairs(all_height,                 # Data frame
+        columns = c('member_deaths', 'hired_staff_deaths', 'highpoint_metres', 'duration'),        # Columns
+        aes(color = season,  # Color by group (cat. variable)
+            alpha = 0.5))
+```
+
+Els resultats no mostren relacions gaire destacables entre variables.
+l'excepció en aquest cas seria la correlació positiva entre la duració de l'expedició i l'alçada màxima aconseguida, relació que sembla coherent, ja que imaginem que les expedicions a majors alçades requereixen més temps.
+També podem veure que la relació entre alçada màxima i estació de l'any mostra patrons diferents pel que fa a les estacions.
+Això indica que en estacions diferents s'aconsegueixen alçades diferents.
+Aquest fet es podria explorar i descriure en més detall en una fase més avançada del procés de mineria de dades.
+
+<br>
+
+Un altre factor que no hem explorat fins ara és l'ús d'oxigen.
+Aquí en mostrem una simple visualització, on veiem que el nombre d'expedicions que no utilitzen oxigen és més del doble de les que sí que ho fan:
+
+```{r}
+table <- table(himalaya$oxygen_used)
+barplot(table, main = 'use of oxygen')
+```
+
+<br>
+
+Entrant més en detall, ens interessa comprovar si hi ha una evolució històrica pel que fa a l'ús d'oxigen.
+Per explorar-ho, mostrem un histograma que relaciona la variable 'any' amb l'ús d'oxigen:
+
+```{r}
+ggplot(himalaya, aes(x = year)) +
+  geom_histogram(aes(color = oxygen_used, fill = oxygen_used), 
+                position = "identity", bins = 98, alpha = 0.4) + 
+  scale_color_manual(values = c("#00AFBB", "#E7B800")) +
+  scale_fill_manual(values = c("#00AFBB", "#E7B800"))
+```
+
+Curiosament, la visualització sembla mostrar una tendència a utilitzar, proporcionalment, més oxigen en els últims anys.
+Fem un 'zoom in' per visualitzar aquesta tendència, i l'organitzem en termes de percentatge any per any:
+
+```{r}
+
+him_reduced <- himalaya[himalaya$year > 1975,]
+counts <- table(him_reduced$oxygen_used, him_reduced$year)
+colors <- c("#00AFBB", "#E7B800")
+barplot(prop.table(counts), beside = TRUE, col = colors, 
+        ylim = c(0, 0.035), axes = TRUE,
+        xlab = "Any",
+        ylab = "Percentatge",
+        main = "Ús d'oxigen per any",
+        legend = c("No oxygen", "Oxygen"), 
+        fill = colors)
+```
+
+Efectivament, la visualització ens mostra un canvi de tendència, on, a diferència de la resta de la història de l'himalaisme, en els últims 4 anys registrats les expedicions que utilitzen oxigen representen un percentatge més alt sobre el total.
+
+<br>
+
+Explorant encara més l'ús d'oxigen, ara en visualitzem la relació amb la durada de l'expedició, utilitzant en aquest cas la variable categòrica 'duration factor' que hem creat anteriorment:
+
+```{r}
+oxy_duration <- ggplot(himalaya, aes(oxygen_used, group = duration_factor)) + 
+          geom_bar(aes(y = ..prop..), stat="count") + 
+          scale_y_continuous(labels=scales::percent) +
+          ylab("relative frequencies") +  scale_x_discrete(labels = c("no", "yes")) + facet_grid(~duration_factor)
+oxy_duration
+```
+
+D'aquesta visualització en podem destacar la gran diferència que es dóna en les expedicions curtes: aquestes majoritàriament no utilitzen oxigen.
+Sabent que hi ha una relació, que hem constatat anteriorment, entre l'alçada màxima i la duració de l'expedició, podem entendre que les expedicions curtes arriben a cotes d'alçada on l'ús d'oxigen simplement no és necessari.
+
+<br>
+
+Finalment, pel que fa a l'ús d'oxigen, explorem visualment la seva relació amb els nivells de mortality, utilitzant la variable 'mortality_factor':
+
+```{r}
+oxy_mortal <- ggplot(himalaya, aes(oxygen_used, group = mortality_factor)) + 
+          geom_bar(aes(y = ..prop..), stat="count") + 
+          scale_y_continuous(labels=scales::percent) +
+          ylab("relative frequencies") +  scale_x_discrete(labels = c("no", "yes")) + facet_grid(~mortality_factor)
+oxy_mortal
+```
+
+Aquí hi veiem que, curiosament, en el nivell de mortalitat alt, la diferència entre ús d'oxigen no és tan extrema com en les expedicions amb nivell baix de mortalitat.
+Inicialment doncs això indicaria que no utilitzar oxigen no resultaria en una mortalitat més alta, però caldria explorar aquesta relació amb més detall.
+
+<br>
+
+Centrant-nos ara en la mortalitat, utilitzarem la variable 'mortality' que recordem que expressa el percentatge de morts sobre el total de participants, i posem aquesta variable en relació a altres variables que sospitem que hi poden tenir relació:
+
+```{r}
+library('Rmisc')
+library(dplyr)
+
+n = c('year', 'duration', 'highpoint_metres', 'members', 'hired_staff')
+mortalitydata= all_height %>% select(all_of(n))
+histList2<- vector('list', ncol(mortalitydata))
+for(i in seq_along(mortalitydata)){
+  message(i)
+histList2[[i]]<-local({
+  i<-i
+  col <-log(mortalitydata[[i]])
+  ggp<- ggplot(data = mortalitydata, aes(x = all_height$mortality, y=col)) + 
+    geom_point(color = "gray30") + geom_smooth(method = lm,color = "blue") + 
+    theme_bw() + xlab("Mortality rate") + ylab(names(mortalitydata)[i])
+  })
+
+}
+multiplot(plotlist = histList2, cols = 3)
+```
+
+El que ens mostra aquesta visualització és graus de correlació molt més baixos del que sospitàvem.
+Inicialment, no sembla que hi hagi cap de les variables que tingui un efecte identificable sobre la mortalitat.
+L'única excepció sembla ser la variable 'any' on potser hi ha una petita relació negativa.
+Al mateix temps però observem que hi ha un grup d'observacions potencialment anòmales, amb valor mortalitat=1.
+Explorem què passa si prescindim d'aquests registres extrems:
+
+```{r}
+mortality_cut <- all_height[!all_height$mortality == 1,]
+summary(mortality_cut$mortality)
+```
+
+```{r}
+if(!require('Rmisc')) install.packages('Rmisc'); library('Rmisc')
+
+n = c('year', 'duration', 'highpoint_metres', 'members', 'hired_staff')
+mortalitydata= mortality_cut %>% select(all_of(n))
+histList2<- vector('list', ncol(mortalitydata))
+for(i in seq_along(mortalitydata)){
+  message(i)
+histList2[[i]]<-local({
+  i<-i
+  col <-log(mortalitydata[[i]])
+  ggp<- ggplot(data = mortalitydata, aes(x = mortality_cut$mortality, y=col)) + 
+    geom_point(color = "gray30") + geom_smooth(method = lm,color = "blue") + 
+    theme_bw() + xlab("Mortality rate") + ylab(names(mortalitydata)[i])
+  })
+
+}
+multiplot(plotlist = histList2, cols = 3)
+```
+
+Després d'aquesta reducció, sembla que els efectes de correlació són lleugerament més pronunciats, sobretot la relació entre l'any i la mortalitat (menys morts en anys recents).
+
+<br>
+
+Seguidament, mostrem una matriu de correlacions utilitzant un grup diferent de variables:
+
+```{r}
+if(!require("corrplot")) install.packages("corrplot"); library("corrplot")
+variables = c('year', 'duration', 'highpoint_metres', 'members', 'member_deaths', 'hired_staff', 'hired_staff_deaths')
+factors= all_height %>% select(all_of(variables))
+sq<-cor(factors)
+corrplot(sq,method="color",tl.col="black", tl.srt=30, order = "AOE", 
+   number.cex=0.75,sig.level = 0.01, addCoef.col = "black")
+```
+
+Aquí les correlacions són també més aviat febles, més enllà de connexions força predictibles, per exemple entre nombre de membres i nombre de treballadors.
+Una altra relació que també sembla òbvia, però que no havíem destacat fins ara, és la relació entre la durada de l'expedició i l'alçada màxima aconseguida.
+Val a dir, que aquesta relació no és directa, és a dir, no podem pensar que pujar més metres pren literalment més temps, sinó que el fet d'assolir més alçada comporta més temps d'adaptació, preparació de material a la ruta, pujades i baixades abans de l'atac al cim, etc.
+Dit d'una altra forma, la relació entre durada de l'expedició i alçada assolida estaria mediada per altres variables que no són presents al joc de dades.
+
+<br>
+
+En el següent gràfic tornem a centrar-nos entre la possible relació que hem detectat entre any d'expedició i índex de mortalitat:
+
+```{r}
+year_d <- ggplot(data = himalaya, aes(x = year, y = mortality)) + geom_point(color = "gray30") + geom_smooth(color = "firebrick") + theme_bw() + ggtitle("Correlació anys i percentatge de mortalitat")
+year_d
+```
+
+Aquest gràfic ens torna a confirmar una relació molt lleu, però visualment identificable, en el sentit que la mortalitat minva (molt) gradualment a través dels anys.
+
+<br>
+
+Ara visualitzem la possible relació entre anys i alçada aconseguida:
+
+```{r}
+year_h <- ggplot(data = all_height, aes(x = year, y = highpoint_metres)) + geom_point(color = "black") + geom_smooth(color = "blue") + theme_bw() + ggtitle("Correlació anys i alçada")
+year_h
+```
+
+En aquest cas tornem a veure que no hi ha una tendència identificable.
+En tot cas, és fàcil d'observar en aquest gràfic que a través dels anys, la quantitat d'expedicions augmenta, i també s'incrementa la diferència entre alçades, hi ha més dispersió en la variable 'peaks', ja que hi ha moltes més expedicions que no cerquen alçada, sinó probablement dificultat o originalitat (pics poc explorats).
+Un resultat no buscat d'aquest gràfic és que fa una analogia molt directa amb les alçades aconseguides durant la història de l'alpinisme: la línia de punts superiors representa les ascensions reeixides a l'Everest (8848 metres), amb el primer punt situat a l'any 1953 (primera ascensió reconeguda), i un increment d'intents a través dels anys que reflecteix la professionalització de l'alpinisme.
+
+<br>
+
+Tornant a la variable mortalitat, ens interessa també visualitzar si hi ha una possible relació entre aquesta i l'època de l'any en que té lloc l'expedició:
+
+```{r}
+season_death_v <- ggplot(himalaya, aes(x=season, y=mortality, fill=season)) + # fill=name allow to automatically dedicate a color for each group
+  geom_violin()
+
+season_death_v
+```
+
+En el gràfic de violí veiem que efectivament a l'estiu hi ha més expedicions amb poca (o cap) mortalitat, i cap expedició supera el 12% de mortalitat, mentre que a l'hivern aquesta relació es reverteix, i hi ha relativament menys expedicions amb baixa mortalitat.
+
+<br>
+
+També en relació amb les estacions de l'any, podem visualitzar la duració de les expedicions:
+
+```{r}
+p2 <- ggplot(data=himalaya, aes(x=duration, group=season, fill=season)) +
+    geom_density(adjust=1.5, alpha=.4)
+p2
+```
+
+Veiem que hi ha patrons de distribució diferenciats, a l'hivern i la tardor hi ha més expedicions de curta durada, mentre que la distribució és més plana a l'estiu i la primavera.
+Separem els gràfics de distribució de densitat per veure-ho de forma encara més clara:
+
+```{r}
+duration_season <- ggplot(data=himalaya, aes(x=duration, group=season, fill=season)) +
+    geom_density(adjust=1.5) +
+    facet_wrap(~season) +
+    theme(
+      legend.position="none",
+      panel.spacing = unit(0.1, "lines"),
+      axis.ticks.x=element_blank()
+    )
+duration_season
+```
+
+<br>
+
+### PCA
+
+<br>
+
+Finalment, provarem de fer una anàlisi de components principals per avaluar la possibilitat d'agrupar el nombre de variables entorn les seves aportacions comunes.
+
+El primer pas consistirà a normalitzar les variables:
+
+```{r}
+himalaya_norm <- as.data.frame(scale(all_height[c('year', 'highpoint_metres', 'members', 'member_deaths','hired_staff', 'hired_staff_deaths', 'duration')], center = TRUE, scale = TRUE))
+apply(himalaya_norm, 2, sd)
+```
+
+<br>
+
+Seguidament, executem l'anàlisi amb la funció prcomp():
+
+```{r}
+pca_him <- prcomp(himalaya_norm)
+summary(pca_him)
+```
+
+<br>
+
+Per tal de decidir quants dels components que apareixen ens interessa conservar, calcularem els valors propis i visualitzarem l'histograma de pesos relatius dels atributs:
+
+```{r}
+if (!require('factoextra')) install.packages('factoextra'); library('factoextra')
+```
+
+```{r}
+ev= get_eig(pca_him)
+ev
+```
+
+```{r}
+fviz_eig(pca_him)
+```
+
+La línia de l'scree plot no presenta un canvi de pendent que faci evident triar el llindar.
+Per tant, decidim guiar-nos pels valors propis, i guardem els 3 primers components, amb valor propi \> 1.
+
+<br>
+
+```{r}
+var <- get_pca_var(pca_him)
+var
+```
+
+<br>
+
+Mostrem doncs l'aportació de les diferents variables a cadascun d'aquests tres components principals:
+
+```{r}
+var$coord[,1:3]
+```
+
+<br>
+
+Seguidament, mostrem dos gràfics que ens mostren, d'una banda, la representació de les variables en un mapa de factors, i de l'altra, la contribució de les variables a cada component principal:
+
+```{r}
+fviz_pca_var(pca_him,
+             col.var = "cos2", 
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     
+             )
+```
+
+```{r}
+corrplot(var$contrib[,1:3], is.corr=FALSE)
+```
+
+Aquests dos gràfics ens confirmen informació que té força coherència, si relacionem les variables amb allò que sabem que representen.
+D'una banda, el nombre de membres i treballadors i la duració de l'expedició, que contribueixen a la primera component, estan lògicament relacionades, i tindria sentit operacionalitzar-les entorn una variable agrupada.
+D'altra banda, és també interessant considerar la segona component, on hi contribueixen les variables 'member_deaths' i 'staff_deaths' (lògicament connectades), però, potser més sorprenentment, també la variable 'highpoint_metres'.
+
+<br>
+
+<br>
+
+### Conclusions
+
+Hem realitzat les tasques prèvies a la generació d'un model de mineria de dades sobre un joc de dades amb informació sobre expedicions a més de 400 pics de l'Himàlaia durant els últims 115 anys.
+Durant la neteja i preparació de les dades hem eliminat dades buides, anòmales o incongruents, alhora que hem creat noves variables, tant numèriques com categòriques, referents a la durada de les expedicions i als nivells de mortalitat.
+L'estudi que plantegem és un estudi descriptiu, en el qual mostrem possibles correlacions i associacions entre variables.
+Els resultats obtinguts en aquesta fase inicial del projecte no són sorprenents, però almenys demostren la coherència de les nostres dades i donen suport a una possible reducció de dimensions, agrupant diverses variables entorn als resultats que obtenim en l'anàlisi de components principals.
+Algunes de les sospites inicials, com que la mortalitat o l'ús d'oxigen podrien davallar a través dels anys, no es veuen confirmades del tot per aquest estudi preliminar (sí que veiem per exemple una davallada de la mortalitat, però molt feble).
+L'estudi ens ajuda a confirmar també algunes associacions que podíem intuir d'inici, com el fet que les expedicions que assoleixen major alçada duren més temps, que les expedicions són més curtes a l'hivern que a l'estiu, i que hi ha menys mortalitat a l'estiu.
+
+<br>
+
+<br>
+
+<br>

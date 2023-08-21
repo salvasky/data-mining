@@ -1,0 +1,752 @@
+---
+title: 'Mineria de dades: PAC3 - Classificació amb arbres de decisió'
+author: "Autor: Salvador Sanchis Beneseit"
+date: "Maig 2022"
+output:
+  html_document:
+    highlight: default
+    number_sections: no
+    theme: cosmo
+    toc: yes
+    toc_depth: 3
+    includes:
+      in_header: 05.584-PAC-header.html
+  pdf_document:
+    highlight: zenburn
+    toc: yes
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(eval=T, echo=T)
+```
+
+------------------------------------------------------------------------
+
+# Classificació amb arbres de decisió
+
+------------------------------------------------------------------------
+
+## Anàlisi descriptiu i de correlacions
+
+<br>
+
+Carreguem les dades:
+
+```{r}
+credit <- read.csv("~/Desktop/DS/22:1/Data Mining/PAC/3/credit.csv", stringsAsFactors=TRUE)
+```
+
+<br>
+
+Mostrem les dimensions del dataset. Veiem que hi ha 1000 registres de 21 variables, i que no hi ha cap valor buit. Visualitzem també un resum inicial de totes les variables:
+
+```{r}
+dim(credit)
+```
+
+```{r}
+missing <- credit[is.na(credit),]
+dim(missing)
+```
+
+```{r}
+summary(credit)
+```
+
+<br>
+
+A primera vista, ens adonem que hi ha una gran quantitat de variables categòriques. Algunes d'elles tenen a veure amb característiques qualitatives, com l'estat civil, o el tipus de feina. Tanmateix, també hi ha moltes variables categoritzades que provenen de mesures numèriques constants, com les variables 'checking balance', 'savings balance' o 'employment length'. Proposem estendre aquesta lògica a totes les variables numèriques, i per tant farem un estudi de diverses variables i crearem categories per la variables numèriques contínues. Considerem que un dataset on totes les variables siguin categòriques serà més coherent i més fàcil d'interpretar un cop hi apliquem algorismes d'arbres de decisió.
+
+<br>
+
+En primer lloc, per clarificar-ne el significat, canviarem el nom de la variable 'installment plan':
+
+```{r}
+names(credit)[names(credit) == "installment_plan"] <- "other_installment_plan"
+```
+
+\
+<br>
+
+Per decidir quin tipus de discretització realitzem, analitzem la distribució de la variable 'amount':
+
+```{r}
+library(ggplot2)
+ggplot(mapping = aes(credit$amount)) + geom_density()
+```
+
+\
+<br>
+
+```{r}
+boxplot(credit$amount)
+```
+
+Observem una forta asimetria i una sèrie de valors extrems, però entenem que no es tracta de registres erronis.\
+<br>
+
+Observem en detall els registres amb els valors més alts de 'amount':
+
+```{r}
+sort_by_amount <- credit[order(credit$amount,decreasing = TRUE), ]
+head(sort_by_amount)
+```
+
+\
+<br>
+
+Decidim utilitzar el mètode k-means per crear una variable discreta amb tres nivells:
+
+```{r}
+library(arules)
+```
+
+```{r}
+credit$amount_d <- discretize(credit$amount, method = "cluster", labels = c("low", "medium", "high"))
+```
+
+```{r}
+summary(credit$amount_d)
+```
+
+```{r}
+amount_low <- credit[credit$amount_d == 'low',]
+amount_medium <- credit[credit$amount_d == 'medium',]
+amount_high <- credit[credit$amount_d == 'high',]
+
+summary(amount_low$amount)
+summary(amount_medium$amount)
+summary(amount_high$amount)
+```
+
+En aquest últim resum veiem quines són les quantitats dels crèdits que caracteritzen cadascun dels grups resultants del procés de discretització: de 250DM a 3812DM, de 3832DM a 8648DM, i de 8858DM a 18424DM.
+
+<br>
+
+Tot seguit, visualitzem la distribució de la variable que mesura la llargada del crèdit en mesos:
+
+```{r}
+ggplot(mapping = aes(credit$months_loan_duration)) + geom_density()
+```
+
+<br>
+
+En aquest cas, decidim crear de forma manual quatre grups, agrupant mesos en anys:
+
+```{r}
+credit$credit_duration_d <- discretize(credit$months_loan_duration, method = "fixed", breaks = c(-Inf, 12, 24, 37, Inf),labels = c("<1 year", "1 to 2 years", "2 to 3 years", ">3 years"))
+summary(credit$credit_duration_d)
+```
+
+<br>
+
+Visualitzem la distribució de la variable edat:
+
+```{r}
+ggplot(mapping = aes(credit$age)) + geom_density()
+```
+
+<br>
+
+En aquest cas també ens decantem per una discretització manual guiant-nos per mesures de caire més aviat psico-social, amb menors de 30 anys i majors de 60 en els extrems, i separant dècades entremig:
+
+```{r}
+credit$age_d <- discretize(credit$age, method = "fixed", breaks = c(-Inf, 30, 41, 51, 61, Inf),labels = c("<30", "30 to 40", "41 to 50", "51 to 60", ">60"))
+summary(credit$age_d)
+```
+
+\
+<br>
+
+Mostrem un resum d'altres variables que en principi són contínues, però que sospitem que contenen un nombre limitat de valors:
+
+```{r}
+summary(as.factor(credit$installment_rate))
+summary(as.factor(credit$residence_history))
+summary(as.factor(credit$existing_credits))
+summary(as.factor(credit$dependents))
+```
+
+Un cop confirmades les nostre sospites, categoritzem totes aquestes variables. En aquesta operació també inclourem la categorització de la variable 'default', que serà la nostra variable classificadora, i hi afegim etiquetes per clarificar-ne el significat:
+
+```{r}
+credit$installment_rate <- as.factor(credit$installment_rate)
+credit$residence_history <- as.factor(credit$residence_history)
+credit$existing_credits <- as.factor(credit$existing_credits)
+credit$dependents <- as.factor(credit$dependents)
+
+credit$default <- as.factor(credit$default)
+levels(credit$default) <- c('no default', 'default')
+```
+
+<br>
+
+Mostrem un nou resum havent fer aquestes modificacions inicials, i ja amb possessió de variables categòriques que inclouen tota la informació del joc de dades:
+
+```{r}
+summary(credit)
+```
+
+<br>
+
+## Visualitzacions, taules i tests estadístics
+
+<br>
+
+A partir d'aquest punt, proposem estudiar totes les variables analitzant-ne la possible relació amb la variable 'default'. Per a cada variable visualitzarem els nivells de la variable en relació amb la variable 'default', mostrarem els percentatges d'aquesta relació en una taula, i també mostrarem valors del test de V de Cramer per tal de mostrar la significància estadística de l'associació entre els nivells de la variable i la variable 'default'.
+
+<br>
+
+```{r}
+if(!require(ggplot2)){
+    install.packages('ggplot2', repos='http://cran.us.r-project.org')
+    library(ggplot2)
+}
+```
+
+```{r}
+if(!require(grid)){
+    install.packages('grid', repos='http://cran.us.r-project.org')
+    library(grid)
+}
+```
+
+```{r}
+if(!require(gridExtra)){
+    install.packages('gridExtra', repos='http://cran.us.r-project.org')
+    library(gridExtra)
+}
+```
+
+```{r}
+if(!require(C50)){
+    install.packages('C50', repos='http://cran.us.r-project.org')
+    library(C50)
+}
+```
+
+```{r}
+if(!require(DescTools)){
+    install.packages('DescTools', repos='http://cran.us.r-project.org')
+    library(DescTools)
+}
+```
+
+<br>
+
+### Checking Balance i Credit Duration:
+
+<br>
+
+```{r}
+grid.newpage()
+
+plotbyCheckBalance<-ggplot(credit,aes(checking_balance,fill=default))+geom_bar() +labs(x="checking_balance", y="customers")+ guides(fill=guide_legend(title=""))+ theme(legend.position = 'bottom')+ scale_fill_manual(values=c("darkolivegreen4","deeppink4"))+ggtitle("Default by Checking Balance")
+plotbyCreditDuration<-ggplot(credit,aes(credit_duration_d,fill=default))+geom_bar() +labs(x="credit duration", y="customers")+ guides(fill=guide_legend(title=""))+  theme(legend.position = 'bottom')+ scale_fill_manual(values=c("darkolivegreen4","deeppink4"))+ggtitle("Default by Credit Duration")
+
+grid.arrange(plotbyCheckBalance, plotbyCreditDuration, ncol=2)
+
+t_check_balance <- prop.table(table(credit$checking_balance, credit$default), margin=1)
+t_credit_duration <- prop.table(table(credit$credit_duration_d, credit$default), margin=1)
+round(t_check_balance, 2)
+round(t_credit_duration, 2)
+
+CramerV(t_check_balance)
+CramerV(t_credit_duration)
+```
+
+L'anàlisi ens mostra que en la variable 'checking balance' hi ha un patró, segons el qual com més diners hi ha al compte corrent del client, menys possibilitat hi ha que hi hagi impagament. Pel que fa a la duració del crèdit, també hi podem trobar una relació: com més llarg és el crèdit més alt és el percentatge de clients amb impagament (fins superar el 50% en el cas de crèdits de més de 3 anys). En ambdós casos l'associació estadística no és gaire alta.\
+<br>
+
+### Credit History:
+
+<br>
+
+```{r}
+plotbyCreditHistory<-ggplot(credit,aes(credit_history,fill=default))+geom_bar() +labs(x="credit history", y="customers")+ guides(fill=guide_legend(title=""))+  theme(legend.position = 'bottom')+ scale_fill_manual(values=c("darkolivegreen4","deeppink4"))+ggtitle("Default by Credit History")
+
+plotbyCreditHistory
+
+t_credit_history <- prop.table(table(credit$credit_history, credit$default), margin=1)
+round(t_credit_history, 2)
+
+CramerV(t_credit_history)
+```
+
+La variable 'Credit History' és qualitativa, i mostra una gran diferència entre el grup 'critical' amb un percentatge molt petit d'impagaments, i el grup 'fully repaid', amb un 62% d'impagaments. L'associació estadística emb la variable default és mitjana.\
+<br>
+
+### Credit Amount i Housing:
+
+<br>
+
+```{r}
+plotbyCreditAmount<-ggplot(credit,aes(amount_d,fill=default))+geom_bar() +labs(x="credit amount", y="customers")+ guides(fill=guide_legend(title=""))+  theme(legend.position = 'bottom')+ scale_fill_manual(values=c("darkolivegreen4","deeppink4"))+ggtitle("Default by Credit Amount")
+plotbyHousing<-ggplot(credit,aes(housing,fill=default))+geom_bar() +labs(x="housing", y="customers")+ guides(fill=guide_legend(title=""))+  theme(legend.position = 'bottom')+ scale_fill_manual(values=c("darkolivegreen4","deeppink4"))+ggtitle("Default by Housing")
+
+grid.arrange(plotbyCreditAmount, plotbyHousing, ncol=2)
+
+t_credit_amount <- prop.table(table(credit$amount_d, credit$default), margin=1)
+t_housing <- prop.table(table(credit$housing, credit$default), margin=1)
+round(t_credit_amount, 2)
+round(t_housing, 2)
+
+CramerV(t_credit_amount)
+CramerV(t_housing)
+```
+
+La quantitat de diners del crèdit també sembla relacionar-se clarament amb els impagaments: com més diners en crèdit, més impagament. Pel que fa al tipus d'allotjament, els nivells d'impagament són comparativament més baixos en clients que viuen en habitatges de propietat. L'associació estadística és més aviat baixa en ambdues variables.\
+<br>
+
+### Installment Rate, Other Installment Plan i Other Existing Credits:
+
+<br>
+
+```{r}
+
+plotbyInstallmentRate<-ggplot(credit,aes(installment_rate,fill=default))+geom_bar() +labs(x="installment rate", y="customers")+ guides(fill=guide_legend(title=""))+  theme(legend.position = 'bottom')+ scale_fill_manual(values=c("darkolivegreen4","deeppink4"))+ggtitle("Installment Rate")
+plotbyOtherPlan<-ggplot(credit,aes(other_installment_plan,fill=default))+geom_bar() +labs(x="other plan", y="customers")+ guides(fill=guide_legend(title=""))+  theme(legend.position = 'bottom')+ scale_fill_manual(values=c("darkolivegreen4","deeppink4"))+ggtitle("Other Credit Plan")
+plotbyExistingCredits<-ggplot(credit,aes(existing_credits,fill=default))+geom_bar() +labs(x="existing credits", y="customers")+ guides(fill=guide_legend(title=""))+  theme(legend.position = 'bottom')+ scale_fill_manual(values=c("darkolivegreen4","deeppink4"))+ggtitle("Existing Credits")
+
+grid.arrange(plotbyInstallmentRate, plotbyOtherPlan, plotbyExistingCredits, ncol=3)
+
+t_installment <- prop.table(table(credit$installment_rate, credit$default), margin=1)
+t_other_plan <- prop.table(table(credit$other_installment_plan, credit$default), margin=1)
+t_existing_credits <- prop.table(table(credit$existing_credits, credit$default), margin=1)
+
+round(t_installment, 2)
+round(t_other_plan, 2)
+round(t_existing_credits, 2)
+
+CramerV(t_installment)
+CramerV(t_other_plan)
+CramerV(t_existing_credits)
+```
+
+Aquestes tres variables no mostren una associació gaire clara entre els seus nivells i la variable 'default', i l'associació estadística també és baixa. Només podem destacar que el grup de clients que no tenen cap altre pagament a terminis mostren un percentatge més baix d'impagaments.\
+<br>
+
+### Dependents, Telephone i Foreign Worker:
+
+<br>
+
+```{r}
+plotbyDependents<-ggplot(credit,aes(dependents,fill=default))+geom_bar() +labs(x="dependents", y="customers")+ guides(fill=guide_legend(title=""))+  theme(legend.position = 'bottom')+ scale_fill_manual(values=c("darkolivegreen4","deeppink4"))+ggtitle("Dependents")
+plotbyTelephone<-ggplot(credit,aes(telephone,fill=default))+geom_bar() +labs(x="telephone", y="customers")+ guides(fill=guide_legend(title=""))+  theme(legend.position = 'bottom')+ scale_fill_manual(values=c("darkolivegreen4","deeppink4"))+ggtitle("Telephone")
+plotbyForeignWorker<-ggplot(credit,aes(foreign_worker,fill=default))+geom_bar() +labs(x="foreign_worker", y="customers")+ guides(fill=guide_legend(title=""))+  theme(legend.position = 'bottom')+ scale_fill_manual(values=c("darkolivegreen4","deeppink4"))+ggtitle("Foreign Worker")
+
+grid.arrange(plotbyDependents, plotbyTelephone, plotbyForeignWorker, ncol=3)
+
+t_dependents <- prop.table(table(credit$dependents, credit$default), margin=1)
+t_telephone <- prop.table(table(credit$telephone, credit$default), margin=1)
+t_foreign <- prop.table(table(credit$foreign_worker, credit$default), margin=1)
+
+round(t_dependents, 2)
+round(t_telephone, 2)
+round(t_foreign, 2)
+
+CramerV(t_dependents)
+CramerV(t_telephone)
+CramerV(t_foreign)
+```
+
+En aquestes tres variables no hi detectem un patró d'associació clar, però cal esmentar un parell d'aspectes que ens semblen rellevants. En la variable 'dependents', que en principi mesura el nombre de persones dependents del client del crèdit, i que en el dataset se'ns presenta com a variable numèrica, ens sobta que els dos únics valors pissibles siguin '1' i '2'. Semblaria voler dir que no hi ha cap persona a la mostra que no tingui cap altra persona dependent, ni tampoc que en tingui 3 o més.
+
+D'altra banda, la variable 'foreign worker' sí que sembla tenir una relació amb la variable 'default', però en aquest cas ens sobta que la quantitat de treballadors estrangers sigui tan alta. Sospitem que, en aquest sentit, no estem davant d'una mostra aleatòria:
+
+```{r}
+summary(credit$foreign_worker)
+```
+
+<br>
+
+### Employment Length:
+
+<br>
+
+```{r}
+plotbyEmploymentLength<-ggplot(credit,aes(employment_length,fill=default))+geom_bar() +labs(x="employment length", y="customers")+ guides(fill=guide_legend(title=""))+  theme(legend.position = 'bottom')+ scale_fill_manual(values=c("darkolivegreen4","deeppink4"))+ggtitle("Employment Length")
+
+plotbyEmploymentLength
+
+t_employment_length <- prop.table(table(credit$employment_length, credit$default), margin=1)
+round(t_employment_length, 2)
+
+CramerV(t_employment_length)
+```
+
+En la variable que mesura la llargada del contracte laboral, veiem que com més curt el contracte major és el percentatge d'impagaments. L'associació estadística és feble.\
+<br>
+
+### Savings Balance:
+
+<br>
+
+```{r}
+plotbySavings<-ggplot(credit,aes(savings_balance,fill=default))+geom_bar() +labs(x="savings balance", y="customers")+ guides(fill=guide_legend(title=""))+  theme(legend.position = 'bottom')+ scale_fill_manual(values=c("darkolivegreen4","deeppink4"))+ggtitle("Default by Savings Balance")
+
+plotbySavings
+
+t_savings <- prop.table(table(credit$savings_balance, credit$default), margin=1)
+round(t_savings, 2)
+
+CramerV(t_savings)
+```
+
+Pel que fa a la quantitat d'estalvis, l'anàlisi ens confirma que els clients amb menys estalvis tendeixen en més quantitat a caure en impagament. L'associació estadística és feble.\
+<br>
+
+### Purpose:
+
+<br>
+
+```{r}
+plotbyPurpose <- ggplot(credit,aes(purpose, fill=default))+geom_bar() +labs(x="purpose", y="customers")+ guides(fill=guide_legend(title=""))+  theme(legend.position = 'bottom')+ scale_fill_manual(values=c("darkolivegreen4","deeppink4"))+ggtitle("Default by Purpose")
+
+plotbyPurpose
+
+t_purpose <- prop.table(table(credit$purpose, credit$default), margin=1)
+
+round(t_purpose, 2)
+
+CramerV(t_purpose)
+```
+
+Pel que fa al motiu del crèdit, no hi ha grans diferències. Potser només podem destacar nivells baixos d'impagaments en crèdits relacionats amb la compra de cotxes de segona mà, educació continuada i aparells de ràdio/TV. L'associació estadística és feble.\
+<br>
+
+### Age i Other Debtors:
+
+<br>
+
+```{r}
+plotbyAge<-ggplot(credit,aes(age_d,fill=default))+geom_bar() +labs(x="age", y="customers")+ guides(fill=guide_legend(title=""))+  theme(legend.position = 'bottom')+ scale_fill_manual(values=c("darkolivegreen4","deeppink4"))+ggtitle("Default by Age")
+plotbyOtherDebtors<-ggplot(credit,aes(other_debtors,fill=default))+geom_bar() +labs(x="other debtors", y="customers")+ guides(fill=guide_legend(title=""))+  theme(legend.position = 'bottom')+ scale_fill_manual(values=c("darkolivegreen4","deeppink4"))+ggtitle("Default by Other Debtors")
+
+grid.arrange(plotbyAge, plotbyOtherDebtors, ncol=2)
+
+t_age <- prop.table(table(credit$age_d, credit$default), margin=1)
+t_debtors <- prop.table(table(credit$other_debtors, credit$default), margin=1)
+
+round(t_age, 2)
+round(t_debtors, 2)
+
+CramerV(t_age)
+CramerV(t_debtors)
+```
+
+Trobem diferències clares en l'edat només en els extrems: hi ha més impagaments entre els menors de 30 anys que en els majors de 60. Pel que fa al tipus de deutor, destaquem que els avaladors tenen un percentatge molt baix d'impagaments. L'associació estadística és feble per a les dues variables.\
+<br>
+
+### Personal Status i Residence History:
+
+<br>
+
+```{r}
+plotbyPersonalStatus<-ggplot(credit,aes(personal_status,fill=default))+geom_bar() +labs(x="personal status", y="customers")+ guides(fill=guide_legend(title=""))+  theme(legend.position = 'bottom')+ scale_fill_manual(values=c("darkolivegreen4","deeppink4"))+ggtitle("Personal Status")
+plotbyResidenceH<-ggplot(credit,aes(residence_history,fill=default))+geom_bar() +labs(x="residence history", y="customers")+ guides(fill=guide_legend(title=""))+  theme(legend.position = 'bottom')+ scale_fill_manual(values=c("darkolivegreen4","deeppink4"))+ggtitle("Residence History")
+
+
+grid.arrange(plotbyPersonalStatus, plotbyResidenceH, ncol=2)
+
+t_status <- prop.table(table(credit$personal_status, credit$default), margin=1)
+t_p_history <- prop.table(table(credit$residence_history, credit$default), margin=1)
+
+round(t_status, 2)
+round(t_p_history, 2)
+
+CramerV(t_status)
+CramerV(t_p_history)
+```
+
+La variable d'històric de residència no mostra diferències remarcables entre els seus nivells. Ens sobta d'aquesta variable, inicialment numèrica, que tots els possibles valors estiguin entre 1 i 4.
+
+Pel que fa a la variable 'personal status', només la categoria 'divorced male' mostra un percentatge comparativament més alt d'impagaments. D'questa variable ens sobta com s'organitzen els nivells. Sembla una barreja de dos trets qualitatius diferents: el sexe i l'estat civil. Un nivell representa les dones, mentre que els altres tres nivells representen homes, amb diferència entre els seus estats civils. És força estrany. Sembla que l'estat civil només és rellevant en el cas que qui demana el crèdit sigui un home.\
+<br>
+
+### Property:
+
+<br>
+
+```{r}
+plotbyProperty<-ggplot(credit,aes(property,fill=default))+geom_bar() +labs(x="property", y="customers")+ guides(fill=guide_legend(title=""))+  theme(legend.position = 'bottom')+ scale_fill_manual(values=c("darkolivegreen4","deeppink4"))+ggtitle("Default by Property")
+
+plotbyProperty
+
+t_property <- prop.table(table(credit$property, credit$default), margin=1)
+
+round(t_property, 2)
+
+CramerV(t_property)
+```
+
+Pel que fa al tipus de propietat del client, el grup de propietaris immobiliaris mostren un percentatge baix d'impagaments, mentre que hi ha més impagaments quan els clients no són propietaris de cal tipus (o quan ens manca la informació). L'associació estadística torna a ser feble per a aquesta variable.\
+<br>
+
+### Job:
+
+<br>
+
+```{r}
+plotbyJob<-ggplot(credit,aes(job,fill=default))+geom_bar() +labs(x="job", y="customers")+ guides(fill=guide_legend(title=""))+  theme(legend.position = 'bottom')+ scale_fill_manual(values=c("darkolivegreen4","deeppink4"))+ggtitle("Default by Job")
+
+plotbyJob
+
+t_job <- prop.table(table(credit$job, credit$default), margin=1)
+
+round(t_job, 2)
+
+CramerV(t_job)
+```
+
+Pel que fa a la variable d'estatut laboral, les diferències no són molt grans, però sembla que hi ha més impagaments en el grup d'autònoms. L'associació estadística és particularment feble en aquest cas.\
+<br>\
+<br>\
+\
+
+## Primer arbre de decisió.
+
+<br>
+
+Seleccionem totes les variables categòriques del joc de dades (les que ja ho eren i les que hem discretitzat):
+
+```{r}
+credit_a <- credit[, c(1, 3, 4, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 18, 19, 20, 21, 22, 23, 24, 17)]
+```
+
+\
+<br>
+
+No sembla que els registren estiguin ordenats, però per si de cas, randomitzem el joc de dades:
+
+```{r}
+set.seed(1)
+credit_random <- credit_a[sample(nrow(credit_a)),]
+```
+
+\
+<br>
+
+Aïllem la variable classificadora ('default'):
+
+```{r}
+set.seed(666)
+y <- credit_random[,21] 
+X <- credit_random[,1:20]
+```
+
+\
+<br>
+
+Creem els grups d'entrenament i test:
+
+```{r}
+split_prop <- 3 
+indexes = sample(1:nrow(credit_a), size=floor(((split_prop-1)/split_prop)*nrow(credit_a)))
+trainX<-X[indexes,]
+trainy<-y[indexes]
+testX<-X[-indexes,]
+testy<-y[-indexes]
+```
+
+\
+<br>
+
+Comprovem que la creació dels grups resulta equilibrada:
+
+```{r}
+sum(summary(trainy))
+sum(summary(trainX$telephone))
+sum(summary(testy))
+sum(summary(testX$checking_balance))
+```
+
+\
+<br>
+
+Apliquem un primer model d'arbre de decisió, mostrant les regles:
+
+```{r}
+trainy = as.factor(trainy)
+model <- C50::C5.0(trainX, trainy, rules=TRUE)
+summary(model)
+```
+
+Tenim una gran quantitat de variables, i el resultat de l'arbre de decisió és complex, contenent fins a 10 regles. Si prenem com a exemple la regla #1, veiem que si el client té un historial de crèdit 'crític', un 'installment rate' amb valor 4, demana una quantitat de diners baixa en crèdit, no és un home divorciat i no té altres pagaments a terminis, podem assumir amb un nivell de confiança del 95% que el client no caurà en impagament. Aquesta regla ha inclòs 56 casos de la mostra amb les característiques esmentades, i en 2 d'aquests casos sí que hi ha impagament. El valor 'lift', que en el cas de la primera regla és de 1.4, resulta de dividir el nivell de precisió estimada de la regla per la freqüència relativa dels casos predits dintre de la mostra.
+
+Una regla més senzilla de resumir seria la regla #9, que indica que si el client té menys de 200DM al compte d'estalvis i demana una quantitat alta de crèdit, podem esperar amb un 80% de confiança que realitzarà impagament. Val a dir però que aquesta regla només inclou 24 casos amb aquestes característiques, inclosos 4 casos que no van cometre impagament.
+
+En general, l'estimació de l'error del model és d'un 20.1%, i a la llista al final del resum podem trobar les variables que s'han utilitzat en la creació del model, on hi destaquen amb majors percentatges les variables 'installment rate' i 'ckeckings balance'
+
+\
+<br>
+
+A continuació mostrem un gràfic amb l'arbre de decisió, tot i que la gran quantitat de variables i regles en fa difícil la interpretació:
+
+```{r, fig.width=20, fig.height=35}
+model_plot <- C50::C5.0(trainX, trainy)
+plot(model_plot)
+```
+
+\
+<br>\
+
+## Anàlisi de la bondat d'ajust sobre el conjunt de test
+
+<br>
+
+Si utilitzem aquest primer model sobre les el conjunt test, obtenim una precisió d'un 72.16%:
+
+```{r}
+predicted_model <- predict( model, testX, type="class" )
+print(sprintf("La precisió de l'arbre de decisió es: %.4f %%",100*sum(predicted_model == testy) / length(predicted_model)))
+```
+
+<br>
+
+Mostrem la taula de confusió on es visualitzen veritables i falsos positius i negatius en la predicció generada pel model sobre el conjunt test:
+
+```{r}
+mat_conf<-table(testy,Predicted=predicted_model)
+mat_conf
+```
+
+\
+<br>
+
+```{r}
+if(!require(gmodels)){
+    install.packages('gmodels', repos='http://cran.us.r-project.org')
+    library(gmodels)
+}
+```
+
+\
+<br>
+
+Mostrem la mateixa taula de confusió amb la suma dels totals. En aquesta matriu de confusió, el valor '29', que és el nombre de falsos positius (nombre de clients que el model prediu que faran impagament que en realitat no en fan), representa l'error de Tipus I. El valor '64' (falsos negatius: clients que el model prediu que no cauran en impagament però que sí que hi cauen) representa l'error de Tipus II.
+
+```{r}
+CrossTable(testy, predicted_model,prop.chisq  = FALSE, prop.c = FALSE, prop.r =FALSE,dnn = c('Reality', 'Prediction'))
+```
+
+\
+<br>
+
+Més avall, quan comparem aquest model amb els següents models que generarem, especificarem la comparativa entre les diverses mètriques de validesa que podem extreure de les matrius de confusió de cada model.
+
+\
+<br>
+
+Un cop analitzat aquest model, podem afirmar que té una capacitat de predicció notable sobre el conjunt test, però ens sembla que pot ser millorable.\
+<br>\
+<br>
+
+## Ajust de models complementaris.
+
+Crearem un segon model incorporant l'opció 'adaptative boosting':
+
+```{r}
+model_02 <- C50::C5.0(trainX, trainy, trials = 10)
+```
+
+<br>
+
+Veiem directament que amb aquest segon model, augmentem des d'una precisió del 72.16% fins a un 76.9%. La millora doncs és considerable:
+
+```{r}
+predicted_model2 <- predict( model_02, testX, type="class" )
+print(sprintf("La precisió del segon arbre: %.4f %%",100*sum(predicted_model2 == testy) / length(predicted_model2)))
+```
+
+<br>
+
+Mostrem la taula de confusió d'aquest segon model:
+
+```{r}
+mat_conf<-table(testy,Predicted=predicted_model2)
+mat_conf
+```
+
+<br>
+
+### Random Forest
+
+<br>
+
+Tot seguit, generem un model amb l'algorisme RandomForest. En aquest cas, no separem la variable classificadora (aquesta s'especifica en els paràmetres de la funció que executa el model). Generem grups d'entrenament i test que quantitats idèntiques als models anteriors, i això ens permetrà més endavant comparar les matrius de confusió de cada model:
+
+```{r}
+set.seed(123)
+
+samp <- sample(nrow(credit_a), 0.666 * nrow(credit_a))
+
+train <- credit_a[samp, ]
+
+test <- credit_a[-samp, ]
+```
+
+```{r}
+library(randomForest)
+model_rf <- randomForest(default~., data = train)
+model_rf
+```
+
+Per a aquest model, obtenim una estimació d'error d'un 24.6%, havent utilitzat 4 variables a cada bifurcació del model. Amb aquest model obtenim una precisió del 76.9%, idèntica a la que obteníem amb el segon model (C5.0 amb adaptative boosting):
+
+```{r}
+prediction_rf <- predict(model_rf, newdata = test)
+
+table(prediction_rf, test$default)
+```
+
+```{r}
+sum(prediction_rf==test$default) / nrow(test)
+```
+
+<br>
+
+La forma d'interpretar el model Random Forest és diferent en relació a les regles que identificàvem en el nostre primer model. El següent gràfic ens mostra les variables que el model considera com a importants en la predicció. En aquest cas, les variable que mesuren el compte d'estalvis i el motiu del crèdit és consideren com a les variables més importants per determinar la predicció (en ambdós casos la precisió del model cauria entorn a un 30% si prescindim de la variable predictora):
+
+```{r}
+varImpPlot(model_rf)
+```
+
+<br>
+
+A continuació mostrem la comparativa de les matrius de confusió de cadascun dels models, incloent-hi les mètriques de sensitivitat i especificitat. En podem concloure que el segon i el tercer model milloren la precisió respecte al primer model, amb la particularitat que el segon model mostra una millor sensitivitat (veritables positius correctament identificats), mentre que el model generat amb RandomForest mostra una especificitat lleugerament més alta (veritables negatius correctament identificats).
+
+```{r}
+library(caret)
+
+confusionMatrix(data=testy, reference = predicted_model)
+```
+
+```{r}
+confusionMatrix(data=testy, reference = predicted_model2)
+```
+
+```{r}
+confusionMatrix(data=test$default, reference = prediction_rf)
+```
+
+<br>
+
+<br>
+
+## Resum de les principals conclusions
+
+<br>
+
+Hem implementat tres models de predicció supervisada sobre un joc de dades referent a les diverses característiques de demandants de crèdits a Alemanya. Es tracta d'un joc de dades amb 1000 registres i 21 variables. Una gran part de les variables són categòriques, incloent-hi descripcions categoritzades de variables d'origen numèric, com per exemple la quantitat d'estalvis o els anys de contracte laboral. Hem discretitzat les variables contínues per tal d'implementar els nostres models d'arbres de decisió sobre variables categòriques en la seva totalitat.
+
+En l'estudi descriptiu de les variables no hem descobert valors nuls o erronis, però ens ha sobtat la forma en que estaven construïdes algunes de les variables. Hem trobat atípic el fet que més del 95% dels registres provenien de treballadors estrangers, que es barregin en una sola variable el sexe i l'estat civil de forma que només s'obté informació de l'estat civil dels homes, i que algunes variables com el nombre de persones independents o el nombre d'anys de residència tinguin valors molt limitats.
+
+Pel que fa als nostres models, un primer model d'arbre de decisió C5.0 obté una estimació d'error del 20.1% i una precisió del 72.16%. Un segon model amb adaptive boosting, i un tercer model amd RandomForest obtenen ambdós una precisió millorada fins el 76.9%, amb el segon model obtenint una millor sensibilitat i el tercer model obtenint una millor especificitat. La interpretació de cadascun dels models és complexa, en part degut a la gran quantitat de variables, que genera també una gran quantitat de regles i branques de decisió. En tot cas, mentre que els primers models utilitzen majoritàriament les variables 'installment rate' i 'checkings balance' com a predictores, el model RandomForest confirma la importància de 'checking balance' (estalvis), però inclou també de forma destacable la variable que descriu el motiu del crèdit. En tots els models, l'historial de crèdit hi juga un paper important com a variable predictora.
+
+<br>
+
+<br>
+
+------------------------------------------------------------------------
